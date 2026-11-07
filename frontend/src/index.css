@@ -50,7 +50,7 @@
   --widget-color: rgba(30, 41, 59, 0.85) !important;
   --hover-color: rgba(51, 65, 85, 0.9) !important;
   --focus-color: #00a8ff !important;
-  --number-color: #a3e635 !important;
+  --number-color: #00a8ff !important;
   --string-color: #38bdf8 !important;
   --font-family: 'Segoe UI', Tahoma, Geneva, Verdana, -apple-system, BlinkMacSystemFont, sans-serif !important;
   --font-size: 11px !important;
@@ -77,12 +77,28 @@
   height: 100% !important;
 }
 
-.lil-gui input[type="number"], .lil-gui input[type="text"] {
-  color: #a3e635 !important;
+/* Right Panel: Pilot Input - Cyan Blue number boxes (matching photo 1:1) */
+.lil-gui-right-container input[type="number"],
+.lil-gui-right-container input[type="text"] {
+  color: #00a8ff !important;
+  -webkit-text-fill-color: #00a8ff !important;
   font-weight: 600 !important;
   text-align: right !important;
   background-color: rgba(15, 23, 42, 0.8) !important;
   border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  opacity: 1 !important;
+}
+
+/* Left Panel: Flight Data - Lime Green number/readout boxes (matching photo 1:1) */
+.lil-gui-left-container input[type="number"],
+.lil-gui-left-container input[type="text"] {
+  color: #a3e635 !important;
+  -webkit-text-fill-color: #a3e635 !important;
+  font-weight: 600 !important;
+  text-align: right !important;
+  background-color: rgba(15, 23, 42, 0.8) !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  opacity: 1 !important;
 }
 
 .lil-gui select {
@@ -125,9 +141,19 @@
   background: rgba(51, 65, 85, 0.95) !important;
 }
 
-/* Atmosphere layer input styling */
+/* Atmosphere layer input styling (left-aligned green text matching photo 1:1) */
 .lil-gui-atmosphere-layer input {
   color: #10b981 !important;
+  -webkit-text-fill-color: #10b981 !important;
   font-weight: bold !important;
-  text-align: center !important;
+  text-align: left !important;
+  padding-left: 6px !important;
+}
+
+/* Camera mode shortcut styling: yellow/lime 'Press V' */
+.lil-gui-camera-hint input {
+  color: #a3e635 !important;
+  -webkit-text-fill-color: #a3e635 !important;
+  font-weight: 600 !important;
+  text-align: right !important;
 }

@@ -41,7 +41,7 @@ export const App: React.FC = () => {
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-black select-none font-mono">
       {/* 1. Main 3D WebGL Canvas Layer */}
-      <Canvas3D config={config} />
+      <Canvas3D config={config} onConfigChange={handleConfigChange} />
 
       {/* 2. Photo 2 Simulation Lab Lil-GUI Overlay (Matching Photo 1:1) */}
       <LilGuiOverlay config={config} onConfigChange={handleConfigChange} />

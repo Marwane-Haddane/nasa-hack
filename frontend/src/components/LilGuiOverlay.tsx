@@ -1,8 +1,7 @@
 import React, { useEffect, useRef } from 'react';
-import GUI from 'lil-gui';
+import GUI, { Controller } from 'lil-gui';
 import { telemetryStore } from '../services/telemetryStore';
 import { fallbackSimulator } from '../services/fallbackTelemetry';
-import { wsClient } from '../services/websocket';
 import { VisualizerConfig, CameraMode, EnvironmentLightingMode } from '../types/visualizer';
 import { TelemetryPacket } from '../types/telemetry';
 
@@ -14,6 +13,30 @@ interface LilGuiOverlayProps {
 export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigChange }) => {
   const leftGuiContainerRef = useRef<HTMLDivElement>(null);
   const rightGuiContainerRef = useRef<HTMLDivElement>(null);
+  const cameraCtrlRef = useRef<Controller | null>(null);
+  const modeCtrlRef = useRef<Controller | null>(null);
+
+  // Sync cameraMode prop with lil-gui controller when V is pressed or config changes externally
+  useEffect(() => {
+    if (cameraCtrlRef.current && config.cameraMode) {
+      let modeStr = 'orbit';
+      if (config.cameraMode === 'COCKPIT') modeStr = 'first';
+      else if (config.cameraMode === 'CHASE') modeStr = 'follow';
+      if (cameraCtrlRef.current.getValue() !== modeStr) {
+        cameraCtrlRef.current.setValue(modeStr);
+      }
+    }
+  }, [config.cameraMode]);
+
+  // Sync lightingMode prop with lil-gui controller
+  useEffect(() => {
+    if (modeCtrlRef.current && config.lightingMode) {
+      const modeStr = config.lightingMode === 'NIGHT' ? 'night' : 'day';
+      if (modeCtrlRef.current.getValue() !== modeStr) {
+        modeCtrlRef.current.setValue(modeStr);
+      }
+    }
+  }, [config.lightingMode]);
 
   useEffect(() => {
     if (!leftGuiContainerRef.current || !rightGuiContainerRef.current) return;
@@ -63,7 +86,7 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       simulationSpeed: 0.1,
       mode: config.lightingMode === 'NIGHT' ? 'night' : 'day',
       atmosphereLayer: 'Troposphere',
-      cameraMode: config.cameraMode ? config.cameraMode.toLowerCase() : 'orbit',
+      cameraMode: config.cameraMode === 'COCKPIT' ? 'first' : config.cameraMode === 'CHASE' ? 'follow' : 'orbit',
     };
 
     // Rocket Values Folder (Open by default)
@@ -90,46 +113,6 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
     envFolder.add(envSettings, 'simulationSpeed', 0, 1, 0.1).name('Simulation Speed');
     envFolder.open();
 
-    // Action Controls (Launch & Stop)
-    const actionControls = {
-      launch: () => {
-        wsClient.reset(1450.0);
-        fallbackSimulator.start((pkt) => telemetryStore.publishTelemetry(pkt));
-      },
-      stop: () => {
-        fallbackSimulator.stop();
-      },
-    };
-
-    const launchCtrl = guiRight.add(actionControls, 'launch').name('🚀 Launch');
-    launchCtrl.domElement.classList.add('lil-gui-launch-btn');
-
-    const stopCtrl = guiRight.add(actionControls, 'stop').name('⏸ Stop');
-    stopCtrl.domElement.classList.add('lil-gui-stop-btn');
-
-    guiRight
-      .add(envSettings, 'mode', ['day', 'night'])
-      .name('mode')
-      .onChange((val: string) => {
-        const mode: EnvironmentLightingMode = val === 'night' ? 'NIGHT' : 'DAY';
-        onConfigChange({ lightingMode: mode });
-      });
-
-    const atmoCtrl = guiRight.add(envSettings, 'atmosphereLayer').name('Atmosphere Layer').disable();
-    atmoCtrl.domElement.classList.add('lil-gui-atmosphere-layer');
-
-    guiRight
-      .add(envSettings, 'cameraMode', ['orbit', 'first', 'follow'])
-      .name('Camera Mode')
-      .onChange((val: string) => {
-        let cam: CameraMode = 'ORBIT';
-        if (val === 'first') cam = 'COCKPIT';
-        else if (val === 'follow') cam = 'CHASE';
-        onConfigChange({ cameraMode: cam });
-      });
-
-    guiRight.add({ shortcut: 'Press V' }, 'shortcut').name('📷 Change camera mode').disable();
-
     // ==========================================
     // 2. Left GUI: Flight Data (Matching Photo 1:1)
     // ==========================================
@@ -146,25 +129,9 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       angle_of_attack: '0.00',
     };
 
-    const heightCtrl = guiLeft.add(flightData, 'rocketHeight').name('Rocket Height').listen().disable();
-    const timeCtrl = guiLeft.add(flightData, 'time').name('Time').listen().disable();
+    guiLeft.add(flightData, 'rocketHeight').name('Rocket Height').listen().disable();
+    guiLeft.add(flightData, 'time').name('Time').listen().disable();
 
-    if (heightCtrl.domElement) {
-      const inp = heightCtrl.domElement.querySelector('input');
-      if (inp) {
-        inp.style.color = '#a3e635';
-        inp.style.fontWeight = 'bold';
-      }
-    }
-    if (timeCtrl.domElement) {
-      const inp = timeCtrl.domElement.querySelector('input');
-      if (inp) {
-        inp.style.color = '#a3e635';
-        inp.style.fontWeight = 'bold';
-      }
-    }
-
-    // Helper to compute vector direction arrow matching reference repo GuiController
     const getVectorMainArrow = (vec: [number, number, number], threshold = 0.01): string => {
       const [x, y, z] = vec;
       const absX = Math.abs(x);
@@ -247,14 +214,7 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
     const angAccFolderRef = createVectorFolder('angularAcceleration', 'rad·s⁻²', [0, 0, 0]);
 
     // 7. angle_of_attack
-    const aoaCtrl = guiLeft.add(flightData, 'angle_of_attack').name('angle_of_attack').listen().disable();
-    if (aoaCtrl.domElement) {
-      const inp = aoaCtrl.domElement.querySelector('input');
-      if (inp) {
-        inp.style.color = '#a3e635';
-        inp.style.fontWeight = 'bold';
-      }
-    }
+    guiLeft.add(flightData, 'angle_of_attack').name('angle_of_attack').listen().disable();
 
     // 8. Total Force
     const totalForceRef = createVectorFolder('Total Force', 'N', [0, -29166288.66, 0]);
@@ -386,14 +346,225 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       }
     };
 
-    // Telemetry subscriber to bind real flight physics values
+    // Syrian Saturn V Real-Time Launch Simulation state
+    let isSaturnLaunching = false;
+    let saturnAnimId: number | null = null;
+    let saturnTime = 0.0;
+    let saturnAltitude = 0.0;
+    let saturnVelocity = 0.0;
+    let saturnFuel = rocketSettings.initialFuelMass;
+
+    const defaultConstraints = {
+      touchdown_vz_safe: true,
+      touchdown_vxy_safe: true,
+      tilt_safe: true,
+      in_descent_cone: true,
+    };
+    const defaultLandingSite = {
+      target_x: 0.0,
+      target_y: 0.0,
+      target_z: 0.0,
+      distance_to_target: 0.0,
+    };
+    const defaultRcs = {
+      roll: 0.0,
+      pitch: 0.0,
+      yaw: 0.0,
+      firing: false,
+    };
+
+    const stopSaturnSimulation = () => {
+      isSaturnLaunching = false;
+      if (saturnAnimId !== null) {
+        cancelAnimationFrame(saturnAnimId);
+        saturnAnimId = null;
+      }
+      fallbackSimulator.stop();
+
+      saturnTime = 0.0;
+      saturnAltitude = 0.0;
+      saturnVelocity = 0.0;
+      saturnFuel = rocketSettings.initialFuelMass;
+
+      flightData.rocketHeight = '0.90 m';
+      flightData.time = '0.00';
+      flightData.angle_of_attack = '0.00';
+      progressFill.style.width = '100%';
+      progressFill.style.background = '#4caf50';
+      fuelText.textContent = `Fuel: ${rocketSettings.initialFuelMass.toFixed(1)} / ${rocketSettings.initialFuelMass.toFixed(1)} kg (100%)`;
+
+      updateVectorFolder(posFolderRef, [0, 1.0, 0]);
+      updateVectorFolder(velFolderRef, [0, 0, 0]);
+      updateVectorFolder(accFolderRef, [0, 0, 0]);
+      updateVectorFolder(angFolderRef, [0, 0, 0]);
+      updateVectorFolder(angVelFolderRef, [0, 0, 0]);
+      updateVectorFolder(angAccFolderRef, [0, 0, 0]);
+      updateVectorFolder(totalForceRef, [0, -29166288.66, 0]);
+      updateVectorFolder(weightForceRef, [0, -29166288.66, 0]);
+      updateVectorFolder(dragForceRef, [0, 0, 0]);
+      updateVectorFolder(liftForceRef, [0, 0, 0]);
+      updateVectorFolder(thrustForceRef, [0, 0, 0]);
+
+      envSettings.atmosphereLayer = 'Troposphere';
+      atmoCtrl.setValue('Troposphere');
+
+      telemetryStore.publishTelemetry({
+        timestamp: 0.0,
+        time_step: 0,
+        position: { x: 0, y: 0, z: 0 },
+        velocity: { x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, v_xy: 0, v_total: 0 },
+        quaternion: { q0: 1, q1: 0, q2: 0, q3: 0 },
+        euler: { roll: 0, pitch: 0, yaw: 0, tilt: 0 },
+        angular_velocity: { wx: 0, wy: 0, wz: 0 },
+        mass: { total: rocketSettings.dryMass + rocketSettings.initialFuelMass, dry: rocketSettings.dryMass },
+        thrust: { newtons: 0, cmd: 0, percentage: 0, gimbal_pitch: 0, gimbal_yaw: 0 },
+        fuel: { percentage: 100, mass: rocketSettings.initialFuelMass, max_mass: rocketSettings.initialFuelMass, flow_rate: 0 },
+        rcs: defaultRcs,
+        stage: { id: 1, name: 'Deorbit Burn', description: 'Saturn V Powered Flight' },
+        status: 'NOMINAL',
+        constraints: defaultConstraints,
+        landing_site: defaultLandingSite,
+        mode: 'MANUAL',
+      });
+    };
+
+    const startSaturnSimulation = () => {
+      stopSaturnSimulation();
+      isSaturnLaunching = true;
+      let lastTime = performance.now();
+
+      const loop = (now: number) => {
+        if (!isSaturnLaunching) return;
+        const dt = Math.min((now - lastTime) / 1000, 0.1);
+        lastTime = now;
+
+        const effectiveDt = dt * (envSettings.simulationSpeed || 0.1) * 10;
+        saturnTime += effectiveDt;
+
+        const thrust = saturnFuel > 0 ? 34500000 : 0;
+        const massFlowRate = saturnFuel > 0 ? 12800 : 0;
+        saturnFuel = Math.max(0, saturnFuel - massFlowRate * effectiveDt);
+
+        const totalMass = rocketSettings.dryMass + saturnFuel;
+        const weightN = totalMass * envSettings.gravity;
+        const scaleHeight = 8500;
+        const airDensity = envSettings.airDensity * Math.exp(-saturnAltitude / scaleHeight);
+        const dragN = 0.5 * airDensity * (saturnVelocity ** 2) * rocketSettings.dragCoefficient * rocketSettings.crossSectionalArea;
+        const netForce = thrust - weightN - dragN;
+        const acc = netForce / totalMass;
+
+        saturnVelocity += acc * effectiveDt;
+        if (saturnVelocity < 0 && saturnAltitude <= 0) {
+          saturnVelocity = 0;
+        }
+        saturnAltitude = Math.max(0, saturnAltitude + saturnVelocity * effectiveDt);
+
+        flightData.rocketHeight = `${(saturnAltitude + 0.90).toFixed(2)} m`;
+        flightData.time = `${saturnTime.toFixed(2)}`;
+
+        updateVectorFolder(posFolderRef, [0, saturnAltitude + 1.0, 0]);
+        updateVectorFolder(velFolderRef, [0, saturnVelocity, 0]);
+        updateVectorFolder(accFolderRef, [0, acc, 0]);
+        updateVectorFolder(totalForceRef, [0, netForce, 0]);
+        updateVectorFolder(weightForceRef, [0, -weightN, 0]);
+        updateVectorFolder(dragForceRef, [0, -dragN, 0]);
+        updateVectorFolder(thrustForceRef, [0, thrust, 0]);
+
+        const fuelRatio = rocketSettings.initialFuelMass > 0 ? Math.max(0, Math.min(1, saturnFuel / rocketSettings.initialFuelMass)) : 0;
+        const pct = fuelRatio * 100;
+        progressFill.style.width = `${pct}%`;
+        if (fuelRatio > 0.6) progressFill.style.background = '#4caf50';
+        else if (fuelRatio > 0.3) progressFill.style.background = '#ffb300';
+        else progressFill.style.background = '#f44336';
+
+        fuelText.textContent = `Fuel: ${saturnFuel.toFixed(1)} / ${rocketSettings.initialFuelMass.toFixed(1)} kg (${pct.toFixed(0)}%)`;
+
+        if (saturnAltitude < 20000) envSettings.atmosphereLayer = 'Troposphere';
+        else if (saturnAltitude < 50000) envSettings.atmosphereLayer = 'Stratosphere';
+        else if (saturnAltitude < 85000) envSettings.atmosphereLayer = 'Mesosphere';
+        else if (saturnAltitude < 600000) envSettings.atmosphereLayer = 'Thermosphere';
+        else envSettings.atmosphereLayer = 'Space';
+        atmoCtrl.setValue(envSettings.atmosphereLayer);
+
+        telemetryStore.publishTelemetry({
+          timestamp: saturnTime,
+          time_step: Math.floor(saturnTime * 60),
+          position: { x: 0, y: 0, z: saturnAltitude },
+          velocity: { x: 0, y: 0, z: saturnVelocity, vx: 0, vy: 0, vz: saturnVelocity, v_xy: 0, v_total: saturnVelocity },
+          quaternion: { q0: 1, q1: 0, q2: 0, q3: 0 },
+          euler: { roll: 0, pitch: 0, yaw: 0, tilt: 0 },
+          angular_velocity: { wx: 0, wy: 0, wz: 0 },
+          mass: { total: totalMass, dry: rocketSettings.dryMass },
+          thrust: { newtons: thrust, cmd: saturnFuel > 0 ? 1.0 : 0.0, percentage: saturnFuel > 0 ? 100 : 0, gimbal_pitch: 0, gimbal_yaw: 0 },
+          fuel: { percentage: pct, mass: saturnFuel, max_mass: rocketSettings.initialFuelMass, flow_rate: massFlowRate },
+          rcs: defaultRcs,
+          stage: { id: 1, name: 'Deorbit Burn', description: 'Saturn V Powered Flight' },
+          status: 'NOMINAL',
+          constraints: defaultConstraints,
+          landing_site: defaultLandingSite,
+          mode: 'MANUAL',
+        });
+
+        saturnAnimId = requestAnimationFrame(loop);
+      };
+
+      saturnAnimId = requestAnimationFrame(loop);
+    };
+
+    // Action Controls (Launch & Stop)
+    const actionControls = {
+      launch: () => {
+        startSaturnSimulation();
+      },
+      stop: () => {
+        stopSaturnSimulation();
+      },
+    };
+
+    const launchCtrl = guiRight.add(actionControls, 'launch').name('🚀 Launch');
+    launchCtrl.domElement.classList.add('lil-gui-launch-btn');
+
+    const stopCtrl = guiRight.add(actionControls, 'stop').name('⏸ Stop');
+    stopCtrl.domElement.classList.add('lil-gui-stop-btn');
+
+    const modeCtrl = guiRight
+      .add(envSettings, 'mode', ['day', 'night'])
+      .name('mode')
+      .onChange((val: string) => {
+        const mode: EnvironmentLightingMode = val === 'night' ? 'NIGHT' : 'DAY';
+        onConfigChange({ lightingMode: mode });
+      });
+    modeCtrlRef.current = modeCtrl;
+
+    const atmoCtrl = guiRight.add(envSettings, 'atmosphereLayer').name('Atmosphere Layer').disable();
+    atmoCtrl.domElement.classList.add('lil-gui-atmosphere-layer');
+
+    const cameraCtrl = guiRight
+      .add(envSettings, 'cameraMode', ['orbit', 'first', 'follow'])
+      .name('Camera Mode')
+      .onChange((val: string) => {
+        let cam: CameraMode = 'ORBIT';
+        if (val === 'first') cam = 'COCKPIT';
+        else if (val === 'follow') cam = 'CHASE';
+        onConfigChange({ cameraMode: cam });
+      });
+    cameraCtrlRef.current = cameraCtrl;
+
+    const hintCtrl = guiRight.add({ shortcut: 'Press V' }, 'shortcut').name('📷 Change camera mode').disable();
+    hintCtrl.domElement.classList.add('lil-gui-camera-hint');
+
+    // Telemetry subscriber for live external or non-Saturn flight data
     const unsubscribe = telemetryStore.subscribeTelemetry((packet: TelemetryPacket) => {
+      // In Saturn V mode while parked on pad, ignore fallback lunar lander telemetry
+      if (config.vehicleModel === 'SATURN_V' && !isSaturnLaunching) {
+        return;
+      }
+
       const alt = packet.position.z >= 0 ? packet.position.z : 0.9;
       flightData.rocketHeight = `${alt.toFixed(2)} m`;
       flightData.time = `${packet.timestamp.toFixed(2)}`;
       flightData.angle_of_attack = `${packet.euler.tilt.toFixed(2)}`;
 
-      // Update vectors
       updateVectorFolder(posFolderRef, [packet.position.x, alt, packet.position.y]);
       updateVectorFolder(velFolderRef, [packet.velocity.x, packet.velocity.vz ?? packet.velocity.z, packet.velocity.y]);
       updateVectorFolder(accFolderRef, [0, packet.velocity.vz !== undefined ? packet.velocity.vz * 0.1 : 0, 0]);
@@ -401,7 +572,6 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       updateVectorFolder(angVelFolderRef, [packet.angular_velocity.wx, packet.angular_velocity.wy, packet.angular_velocity.wz]);
       updateVectorFolder(angAccFolderRef, [0, 0, 0]);
 
-      // Forces
       const thrustN = packet.thrust.newtons;
       const weightN = packet.mass.total * 9.80665;
       updateVectorFolder(totalForceRef, [0, thrustN - weightN, 0]);
@@ -419,20 +589,20 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       });
       updateVectorFolder(thrustForceRef, [0, thrustN, 0]);
 
-      // Fuel bar
       const pct = Math.max(0, Math.min(100, packet.fuel.percentage));
       progressFill.style.width = `${pct}%`;
       fuelText.textContent = `Fuel: ${(2640000 * (pct / 100)).toFixed(1)} / 2640000.0 kg (${pct.toFixed(0)}%)`;
 
-      // Atmosphere Layer update
-      if (alt < 12000) envSettings.atmosphereLayer = 'Troposphere';
+      if (alt < 20000) envSettings.atmosphereLayer = 'Troposphere';
       else if (alt < 50000) envSettings.atmosphereLayer = 'Stratosphere';
       else if (alt < 85000) envSettings.atmosphereLayer = 'Mesosphere';
-      else envSettings.atmosphereLayer = 'Thermosphere';
+      else if (alt < 600000) envSettings.atmosphereLayer = 'Thermosphere';
+      else envSettings.atmosphereLayer = 'Space';
       atmoCtrl.setValue(envSettings.atmosphereLayer);
     });
 
     return () => {
+      if (saturnAnimId !== null) cancelAnimationFrame(saturnAnimId);
       unsubscribe();
       guiLeft.destroy();
       guiRight.destroy();

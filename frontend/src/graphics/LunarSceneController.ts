@@ -35,10 +35,16 @@ export class LunarSceneController {
   private clock: THREE.Clock;
   private config: VisualizerConfig;
   private lastTelemetry: TelemetryPacket | null = null;
+  private onConfigChange?: (newConfig: Partial<VisualizerConfig>) => void;
 
-  constructor(container: HTMLElement, initialConfig?: Partial<VisualizerConfig>) {
+  constructor(
+    container: HTMLElement,
+    initialConfig?: Partial<VisualizerConfig>,
+    onConfigChange?: (newConfig: Partial<VisualizerConfig>) => void
+  ) {
     this.container = container;
     this.clock = new THREE.Clock();
+    this.onConfigChange = onConfigChange;
 
     this.config = {
       cameraMode: 'ORBIT',
@@ -77,8 +83,8 @@ export class LunarSceneController {
     // 2. Camera - framed to view Saturn V and Launch Pad majestically (matching Photo 1:1)
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
-    this.camera = new THREE.PerspectiveCamera(55, width / Math.max(height, 1), 0.1, 25000);
-    this.camera.position.set(10, 8, 55);
+    this.camera = new THREE.PerspectiveCamera(60, width / Math.max(height, 1), 0.1, 25000);
+    this.camera.position.set(5.5, 3.5, 58);
 
     // 3. WebGL Renderer
     this.renderer = new THREE.WebGLRenderer({
@@ -102,7 +108,7 @@ export class LunarSceneController {
     this.controls.maxPolarAngle = Math.PI / 2 - 0.01;
     this.controls.minDistance = 1.5;
     this.controls.maxDistance = 5000;
-    this.controls.target.set(0, 18, 0);
+    this.controls.target.set(0, 14.5, 0);
     this.controls.update();
 
     // 5. Initialize Subsystems
@@ -140,7 +146,9 @@ export class LunarSceneController {
       if (e.code === 'KeyV') {
         const modes: ('ORBIT' | 'CHASE' | 'COCKPIT' | 'LANDING_PAD')[] = ['ORBIT', 'CHASE', 'COCKPIT', 'LANDING_PAD'];
         const nextIdx = (modes.indexOf(this.config.cameraMode) + 1) % modes.length;
-        this.setConfig({ cameraMode: modes[nextIdx] });
+        const nextMode = modes[nextIdx];
+        this.setConfig({ cameraMode: nextMode });
+        this.onConfigChange?.({ cameraMode: nextMode });
       }
     });
 

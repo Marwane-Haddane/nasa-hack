@@ -5,9 +5,10 @@ import { VisualizerConfig } from '../types/visualizer';
 
 interface Canvas3DProps {
   config: VisualizerConfig;
+  onConfigChange?: (newConfig: Partial<VisualizerConfig>) => void;
 }
 
-export const Canvas3D: React.FC<Canvas3DProps> = ({ config }) => {
+export const Canvas3D: React.FC<Canvas3DProps> = ({ config, onConfigChange }) => {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const controllerRef = useRef<LunarSceneController | null>(null);
 
@@ -15,7 +16,7 @@ export const Canvas3D: React.FC<Canvas3DProps> = ({ config }) => {
     if (!containerRef.current) return;
 
     // Initialize 3D Engine
-    const controller = new LunarSceneController(containerRef.current, config);
+    const controller = new LunarSceneController(containerRef.current, config, onConfigChange);
     controllerRef.current = controller;
 
     // Subscribe directly to telemetry stream for zero-re-render 60 FPS graphics updates
