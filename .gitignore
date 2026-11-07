@@ -8,6 +8,15 @@ dist/
 build/
 *.tsbuildinfo
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+*.egg-info/
+
 # Environment variables
 .env
 .env.local
@@ -25,6 +34,9 @@ pnpm-debug.log*
 
 # Teamwork agent metadata & internal files
 .agents/
+temp_aryamehr/
+pdf_extracted.txt
+clean_spec.txt
 
 # Operating System & Editor Files
 .DS_Store

@@ -1,4 +1,19 @@
 {
+  "name": "nasa-hack-monorepo",
+  "version": "1.0.0",
+  "description": "Autonomous Lunar Landing Navigator & 3D Mission Simulator (NASA Space Apps Challenge 2026)",
+  "private": true,
+  "scripts": {
+    "dev": "npm run start",
+    "start": "python server.py",
+    "dev:backend": "python server.py",
+    "dev:frontend": "npm --prefix frontend run dev",
+    "test": "npm run test:backend && npm run test:frontend",
+    "test:backend": "pytest backend/tests -v",
+    "test:frontend": "npm --prefix frontend test",
+    "build": "npm --prefix frontend run build",
+    "build:frontend": "npm --prefix frontend run build"
+  },
   "devDependencies": {
     "@types/node": "^26.6.6"
   }
