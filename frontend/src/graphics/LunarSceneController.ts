@@ -92,6 +92,8 @@ export class LunarSceneController {
 
     this.terrain = new TerrainMesh(2000, 200);
     this.scene.add(this.terrain.group);
+    // Ingest NASA Moon Trek DEM heightmap from FastAPI backend API asynchronously
+    this.terrain.loadDemFromApi().catch(() => {});
 
     this.lander = new LanderModel();
     this.scene.add(this.lander.group);

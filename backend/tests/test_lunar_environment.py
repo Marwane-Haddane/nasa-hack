@@ -230,3 +230,29 @@ class TestLunarEnvironment:
         assert all(k in pkt["euler"] for k in ("roll", "pitch", "yaw", "tilt"))
         assert all(k in pkt["fuel"] for k in ("mass", "max_mass", "percentage", "flow_rate"))
         assert all(k in pkt["constraints"] for k in ("touchdown_vz_safe", "touchdown_vxy_safe", "tilt_safe", "in_descent_cone"))
+
+    def test_manual_gimbal_attitude_tilt(self) -> None:
+        """Verify manual gimbal commands rotate attitude quaternion and update tilt angle."""
+        env = LunarEnvironment()
+        env.reset()
+        env.set_pilot_command(mode="MANUAL", throttle=0.5, gimbal_pitch=12.0)
+        env.step(0.1)
+
+        euler = quaternion_to_euler_degrees(env.q0, env.q1, env.q2, env.q3)
+        assert abs(euler["pitch"]) > 2.0  # Leaned into pitch
+        assert calculate_tilt_degrees(env.q0, env.q1, env.q2, env.q3) > 2.0
+
+    def test_pilot_command_sanitization_resilience(self) -> None:
+        """Verify set_pilot_command handles non-float and out-of-range inputs gracefully."""
+        env = LunarEnvironment()
+        env.reset()
+        env.mode = "MANUAL"
+
+        # Should not raise any exception
+        env.set_pilot_command(
+            throttle="invalid_string",  # type: ignore
+            gimbal_pitch=None,
+            disturbance_vector=["bad", "vec"],  # type: ignore
+        )
+        assert env.mode == "MANUAL"
+        assert env.throttle >= 0.0

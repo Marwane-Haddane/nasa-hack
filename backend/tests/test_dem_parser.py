@@ -113,3 +113,18 @@ class TestDemParser:
         finally:
             if os.path.exists(tmp_path):
                 os.remove(tmp_path)
+
+    def test_mesh_data_caching_performance(self) -> None:
+        """Verify export_threejs_mesh_data caches results for instant sub-millisecond repeated queries."""
+        import time
+        # Prime cache
+        _ = dem_parser.export_threejs_mesh_data(size=1200.0, segments=25)
+
+        # Timed subsequent call from cache
+        t0 = time.perf_counter()
+        cached = dem_parser.export_threejs_mesh_data(size=1200.0, segments=25)
+        elapsed = time.perf_counter() - t0
+
+        assert elapsed < 0.01  # Must return from cache in < 10 ms
+        assert cached["metadata"]["size"] == 1200.0
+        assert (1200.0, 25) in dem_parser._mesh_cache

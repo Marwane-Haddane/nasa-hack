@@ -146,17 +146,32 @@ class LunarEnvironment:
             self.mode = mode
 
         if disturbance_vector is not None:
-            self.disturbance_vector = (float(disturbance_vector[0]), float(disturbance_vector[1]))
+            try:
+                self.disturbance_vector = (float(disturbance_vector[0]), float(disturbance_vector[1]))
+            except (ValueError, TypeError, IndexError):
+                pass
 
         if self.mode == "MANUAL":
             if throttle is not None:
-                self.throttle = max(0.0, min(1.0, float(throttle)))
+                try:
+                    self.throttle = max(0.0, min(1.0, float(throttle)))
+                except (ValueError, TypeError):
+                    pass
             if gimbal_pitch is not None:
-                self.gimbal_pitch = max(-MAX_GIMBAL_DEG, min(MAX_GIMBAL_DEG, float(gimbal_pitch)))
+                try:
+                    self.gimbal_pitch = max(-MAX_GIMBAL_DEG, min(MAX_GIMBAL_DEG, float(gimbal_pitch)))
+                except (ValueError, TypeError):
+                    pass
             if gimbal_yaw is not None:
-                self.gimbal_yaw = max(-MAX_GIMBAL_DEG, min(MAX_GIMBAL_DEG, float(gimbal_yaw)))
+                try:
+                    self.gimbal_yaw = max(-MAX_GIMBAL_DEG, min(MAX_GIMBAL_DEG, float(gimbal_yaw)))
+                except (ValueError, TypeError):
+                    pass
             if rcs_roll is not None:
-                self.rcs_roll = max(-1.0, min(1.0, float(rcs_roll)))
+                try:
+                    self.rcs_roll = max(-1.0, min(1.0, float(rcs_roll)))
+                except (ValueError, TypeError):
+                    pass
 
     def update_stage_progression(self) -> None:
         """Universal 5-phase flight stage progression based on vehicle altitude AGL."""
@@ -285,9 +300,12 @@ class LunarEnvironment:
         self.z += float(dr[2])
 
         # Attitude Kinematics:
-        # In AI mode, vehicle aligns towards thrust direction.
-        # In MANUAL mode, preserve orientation unless RCS / torques act on it.
-        if self.mode == "AI":
+        # In AI mode or when gimbal is active in MANUAL mode, vehicle leans slightly to vector thrust.
+        # RCS roll provides axial rotation.
+        should_update_attitude = self.mode == "AI" or (
+            self.mode == "MANUAL" and (abs(self.gimbal_pitch) > 0.01 or abs(self.gimbal_yaw) > 0.01)
+        )
+        if should_update_attitude:
             target_roll = -self.gimbal_yaw * 0.4
             target_pitch = self.gimbal_pitch * 0.4
             target_yaw = 0.0
@@ -308,7 +326,8 @@ class LunarEnvironment:
             self.q1 = s1 * c2 * c3 - c1 * s2 * s3
             self.q2 = c1 * s2 * c3 + s1 * c2 * s3
             self.q3 = c1 * c2 * s3 - s1 * s2 * c3
-        elif abs(self.rcs_roll) > 0.01:
+
+        if abs(self.rcs_roll) > 0.01:
             # Integrate RCS roll torque
             droll = math.radians(self.rcs_roll * 15.0 * dt)
             c = math.cos(droll / 2.0)

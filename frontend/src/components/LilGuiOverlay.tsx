@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import GUI from 'lil-gui';
 import { telemetryStore } from '../services/telemetryStore';
 import { fallbackSimulator } from '../services/fallbackTelemetry';
+import { wsClient } from '../services/websocket';
 import { VisualizerConfig, CameraMode, EnvironmentLightingMode } from '../types/visualizer';
 import { TelemetryPacket } from '../types/telemetry';
 
@@ -95,14 +96,14 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
     // Action Controls (Launch & Stop)
     const actionControls = {
       launch: () => {
-        fallbackSimulator.reset(1450.0);
+        wsClient.reset(1450.0);
         fallbackSimulator.start((pkt) => telemetryStore.publishTelemetry(pkt));
       },
       stop: () => {
         fallbackSimulator.stop();
       },
       reset: () => {
-        fallbackSimulator.reset(1450.0);
+        wsClient.reset(1450.0);
       }
     };
 

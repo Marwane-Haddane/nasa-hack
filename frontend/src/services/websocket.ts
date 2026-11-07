@@ -2,6 +2,18 @@ import { TelemetryPacket, PilotCommand } from '../types/telemetry';
 import { telemetryStore } from './telemetryStore';
 import { fallbackSimulator } from './fallbackTelemetry';
 
+export function getDefaultWsUrl(): string {
+  const metaEnv = (import.meta as unknown as { env?: { VITE_WS_URL?: string } })?.env;
+  if (metaEnv?.VITE_WS_URL) {
+    return metaEnv.VITE_WS_URL;
+  }
+  if (typeof window !== 'undefined' && window.location && window.location.hostname) {
+    const host = window.location.hostname;
+    return `ws://${host}:8000/ws`;
+  }
+  return 'ws://localhost:8000/ws';
+}
+
 export class WebSocketClient {
   private url: string;
   private ws: WebSocket | null = null;
@@ -10,8 +22,8 @@ export class WebSocketClient {
   private reconnectTimer: number | null = null;
   private shouldConnect = true;
 
-  constructor(url = 'ws://localhost:8000/ws') {
-    this.url = url;
+  constructor(url?: string) {
+    this.url = url || getDefaultWsUrl();
   }
 
   public connect(): void {
@@ -83,6 +95,14 @@ export class WebSocketClient {
     // Always apply to local simulator as well for instant responsiveness
     fallbackSimulator.setPilotCommand(command);
     telemetryStore.setPilotCommand(command);
+  }
+
+  public reset(dropAltitude = 1450.0): void {
+    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({ command: 'reset', drop_altitude: dropAltitude }));
+    }
+    fallbackSimulator.reset(dropAltitude);
+    telemetryStore.resetHistory();
   }
 
   public disconnect(): void {

@@ -53,6 +53,7 @@ class DemParser:
 
         # Elevation grid in meters (2D numpy array: [rows, cols])
         self.elevation_grid: np.ndarray = np.zeros((self.resolution, self.resolution), dtype=np.float32)
+        self._mesh_cache: Dict[Tuple[float, int], Dict[str, Any]] = {}
 
         # Ingest or initialize
         if filepath and os.path.exists(filepath):
@@ -113,6 +114,7 @@ class DemParser:
         self.min_elevation = float(np.min(grid))
         self.max_elevation = float(np.max(grid))
         self.mean_elevation = float(np.mean(grid))
+        self._mesh_cache.clear()
 
     def get_elevation(self, x: float, y: float) -> float:
         """Query elevation at world position (x, y) using bilinear interpolation.
@@ -233,6 +235,10 @@ class DemParser:
         mesh_size = float(size) if size else self.grid_size
         mesh_segs = int(segments) if segments else min(self.resolution - 1, 100)
 
+        cache_key = (mesh_size, mesh_segs)
+        if cache_key in self._mesh_cache:
+            return self._mesh_cache[cache_key]
+
         step = mesh_size / mesh_segs
         half = mesh_size / 2.0
 
@@ -260,7 +266,7 @@ class DemParser:
                 else:
                     hazards.append(2)
 
-        return {
+        result = {
             "metadata": {
                 "source": "NASA Moon Trek DEM / Shackleton Crater",
                 "center_lat_lon": list(self.center_lat_lon),
@@ -275,6 +281,8 @@ class DemParser:
             "slopes": slopes,
             "hazards": hazards,
         }
+        self._mesh_cache[cache_key] = result
+        return result
 
     def save_geotiff(self, filepath: str) -> None:
         """Write current elevation grid as a valid GeoTIFF raster file.
@@ -412,6 +420,7 @@ class DemParser:
             self.min_elevation = float(np.min(self.elevation_grid))
             self.max_elevation = float(np.max(self.elevation_grid))
             self.mean_elevation = float(np.mean(self.elevation_grid))
+            self._mesh_cache.clear()
         else:
             # Fallback to generated DEM
             self._generate_shackleton_dem()

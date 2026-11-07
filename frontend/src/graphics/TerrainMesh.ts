@@ -198,6 +198,40 @@ export class TerrainMesh {
     this.material.wireframe = wireframe;
   }
 
+  public applyDemData(data: { vertices: number[]; slopes?: number[]; hazards?: number[] }): void {
+    if (!data || !data.vertices || data.vertices.length < 3) return;
+    const posAttr = this.geometry.attributes.position;
+    const totalVertices = posAttr.count;
+    const dataVertices = data.vertices;
+    const count = Math.min(totalVertices, Math.floor(dataVertices.length / 3));
+
+    for (let i = 0; i < count; i++) {
+      const elev = dataVertices[i * 3 + 2];
+      posAttr.setY(i, elev);
+    }
+
+    posAttr.needsUpdate = true;
+    this.geometry.computeVertexNormals();
+  }
+
+  public async loadDemFromApi(apiUrl?: string): Promise<boolean> {
+    try {
+      if (typeof fetch !== 'function') return false;
+      const defaultHost = (typeof window !== 'undefined' && window.location && window.location.hostname)
+        ? window.location.hostname
+        : 'localhost';
+      const url = apiUrl || `http://${defaultHost}:8000/api/terrain?size=2000&segments=200`;
+      const res = await fetch(url);
+      if (!res.ok) return false;
+      const data = await res.json();
+      this.applyDemData(data);
+      return true;
+    } catch {
+      // Fallback silently remains procedural Shackleton model
+      return false;
+    }
+  }
+
   public dispose(): void {
     this.geometry.dispose();
     this.material.dispose();

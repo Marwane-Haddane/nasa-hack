@@ -18,7 +18,17 @@ export const FlightControls: React.FC<FlightControlsProps> = ({ config, onConfig
 
   const handleModeToggle = (mode: FlightControlMode) => {
     setControlMode(mode);
-    wsClient.sendCommand({ mode });
+    if (mode === 'MANUAL') {
+      wsClient.sendCommand({
+        mode,
+        throttle: manualThrottle,
+        gimbal_pitch: manualPitch,
+        gimbal_yaw: manualYaw,
+        disturbance_vector: [disturbance, disturbance * 0.4]
+      });
+    } else {
+      wsClient.sendCommand({ mode });
+    }
   };
 
   const handleThrottleChange = (val: number) => {

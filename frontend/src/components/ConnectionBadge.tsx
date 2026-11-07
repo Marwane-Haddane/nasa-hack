@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Radio, Cpu, RefreshCw } from 'lucide-react';
 import { telemetryStore } from '../services/telemetryStore';
-import { fallbackSimulator } from '../services/fallbackTelemetry';
+import { wsClient } from '../services/websocket';
 
 export const ConnectionBadge: React.FC = () => {
   const [status, setStatus] = useState(telemetryStore.getConnectionStatus());
@@ -13,8 +13,7 @@ export const ConnectionBadge: React.FC = () => {
   }, []);
 
   const handleResetSimulation = () => {
-    fallbackSimulator.reset(1450.0);
-    telemetryStore.resetHistory();
+    wsClient.reset(1450.0);
   };
 
   return (

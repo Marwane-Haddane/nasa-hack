@@ -128,8 +128,72 @@ class TestWebSocketBridge:
         assert sim_manager.env.mode == "MANUAL"
         assert abs(sim_manager.env.throttle - 0.65) < 0.01
 
-        # POST /api/reset
+        # POST /api/reset (query parameter)
         res_reset = client.post("/api/reset?drop_altitude=1600.0")
         assert res_reset.status_code == 200
         assert res_reset.json()["status"] == "reset"
         assert sim_manager.env.z == 1600.0
+
+        # POST /api/reset (JSON body)
+        res_reset_body = client.post("/api/reset", json={"drop_altitude": 1850.0})
+        assert res_reset_body.status_code == 200
+        assert res_reset_body.json()["status"] == "reset"
+        assert sim_manager.env.z == 1850.0
+
+    def test_websocket_invalid_input_resilience(self) -> None:
+        """Verify WebSocket server does not crash or disconnect when receiving malformed pilot inputs."""
+        client = TestClient(app)
+        with client.websocket_connect("/ws") as ws:
+            _ = ws.receive_json()
+
+            # Send invalid types
+            ws.send_text(json.dumps({"throttle": "not-a-number", "disturbance_vector": ["x", "y"]}))
+            time.sleep(0.05)
+
+            # Send malformed string
+            ws.send_text("THIS IS NOT JSON")
+            time.sleep(0.05)
+
+            # Connection must remain alive and accept subsequent valid command
+            ws.send_text(json.dumps({"mode": "MANUAL", "throttle": 0.55}))
+            time.sleep(0.05)
+            assert sim_manager.env.mode == "MANUAL"
+            assert abs(sim_manager.env.throttle - 0.55) < 0.01
+
+    def test_websocket_auto_reset_on_new_connection_after_terminal_state(self) -> None:
+        """Verify that when a client connects to an already-finished flight, it auto-resets cleanly."""
+        # Simulate previous finished crash
+        sim_manager.env.is_crashed = True
+        sim_manager.env.status = "CRASH"
+        sim_manager.env.z = 0.0
+
+        client = TestClient(app)
+        with client.websocket_connect("/ws") as ws:
+            pkt = ws.receive_json()
+            assert pkt["status"] == "NOMINAL"
+            assert pkt["position"]["z"] > 1000.0
+            assert pkt["stage"]["id"] == 1
+
+    def test_frontend_app_serving(self) -> None:
+        """Verify FastAPI serves the production 3D visualizer at / and metadata at /api."""
+        client = TestClient(app)
+        res_api = client.get("/api")
+        assert res_api.status_code == 200
+        assert "endpoints" in res_api.json()
+
+        res_root = client.get("/")
+        assert res_root.status_code == 200
+        # When dist is built, serves HTML
+        assert "html" in res_root.headers.get("content-type", "").lower() or "project" in res_root.text
+
+    def test_concurrent_websocket_clients(self) -> None:
+        """Verify multiple simultaneous WebSocket connections receive telemetry concurrently."""
+        client = TestClient(app)
+        with client.websocket_connect("/ws") as ws1:
+            with client.websocket_connect("/ws/telemetry") as ws2:
+                pkt1 = ws1.receive_json()
+                pkt2 = ws2.receive_json()
+                assert isinstance(pkt1, dict)
+                assert isinstance(pkt2, dict)
+                assert "timestamp" in pkt1
+                assert "timestamp" in pkt2

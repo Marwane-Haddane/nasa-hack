@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 from typing import Any, AsyncGenerator, Dict, List, Optional, Set
@@ -43,7 +44,13 @@ class PilotCommandModel(BaseModel):
     rcs_roll: Optional[float] = Field(None, ge=-1.0, le=1.0, description="RCS roll control impulse")
     disturbance_vector: Optional[List[float]] = Field(None, description="Wind/drift disturbance [wx, wy]")
     command: Optional[str] = Field(None, description="Special commands (e.g. 'reset')")
-    drop_altitude: Optional[float] = Field(None, ge=50.0, le=5000.0, description="Altitude for reset in meters")
+    drop_altitude: Optional[float] = Field(None, ge=10.0, le=5000.0, description="Altitude for reset in meters")
+
+
+class ResetModel(BaseModel):
+    """Pydantic model for reset endpoints."""
+
+    drop_altitude: Optional[float] = Field(1450.0, ge=10.0, le=5000.0, description="Drop altitude in meters")
 
 
 class SimulationManager:
@@ -80,10 +87,17 @@ class SimulationManager:
         """Register a new WebSocket client."""
         await websocket.accept()
         async with self.lock:
+            # Auto-reset if lander already completed flight before new client arrived
+            if self.env.is_landed or self.env.is_crashed:
+                self.latest_telemetry = self.env.reset()
             self.active_connections.add(websocket)
+            payload = json.dumps(self.latest_telemetry)
         logger.info(f"WebSocket client connected. Total active clients: {len(self.active_connections)}")
         # Send initial packet immediately upon connection
-        await websocket.send_text(json.dumps(self.latest_telemetry))
+        try:
+            await websocket.send_text(payload)
+        except Exception:
+            pass
 
     async def disconnect(self, websocket: WebSocket) -> None:
         """Deregister a WebSocket client."""
@@ -93,29 +107,40 @@ class SimulationManager:
 
     async def apply_command(self, cmd: Dict[str, Any]) -> None:
         """Apply pilot command to simulation state."""
-        async with self.lock:
-            if cmd.get("command") == "reset":
-                alt = cmd.get("drop_altitude", 1450.0)
-                self.latest_telemetry = self.env.reset(drop_altitude=alt)
-                logger.info(f"Simulation reset to altitude {alt} m.")
-                return
+        try:
+            async with self.lock:
+                if cmd.get("command") == "reset":
+                    try:
+                        alt = float(cmd.get("drop_altitude", 1450.0))
+                    except (ValueError, TypeError):
+                        alt = 1450.0
+                    self.latest_telemetry = self.env.reset(drop_altitude=alt)
+                    logger.info(f"Simulation reset to altitude {alt} m.")
+                    return
 
-            mode = cmd.get("mode")
-            throttle = cmd.get("throttle")
-            gimbal_pitch = cmd.get("gimbal_pitch")
-            gimbal_yaw = cmd.get("gimbal_yaw")
-            rcs_roll = cmd.get("rcs_roll")
-            dist = cmd.get("disturbance_vector")
-            dist_tuple = (float(dist[0]), float(dist[1])) if (dist and len(dist) >= 2) else None
+                mode = cmd.get("mode")
+                throttle = cmd.get("throttle")
+                gimbal_pitch = cmd.get("gimbal_pitch")
+                gimbal_yaw = cmd.get("gimbal_yaw")
+                rcs_roll = cmd.get("rcs_roll")
+                dist = cmd.get("disturbance_vector")
+                dist_tuple = None
+                if dist and isinstance(dist, (list, tuple)) and len(dist) >= 2:
+                    try:
+                        dist_tuple = (float(dist[0]), float(dist[1]))
+                    except (ValueError, TypeError):
+                        dist_tuple = None
 
-            self.env.set_pilot_command(
-                mode=mode,
-                throttle=throttle,
-                gimbal_pitch=gimbal_pitch,
-                gimbal_yaw=gimbal_yaw,
-                rcs_roll=rcs_roll,
-                disturbance_vector=dist_tuple,
-            )
+                self.env.set_pilot_command(
+                    mode=mode,
+                    throttle=throttle,
+                    gimbal_pitch=gimbal_pitch,
+                    gimbal_yaw=gimbal_yaw,
+                    rcs_roll=rcs_roll,
+                    disturbance_vector=dist_tuple,
+                )
+        except Exception as e:
+            logger.warning(f"Error applying pilot command {cmd}: {e}")
 
     async def _broadcast_loop(self) -> None:
         """High-precision 60 Hz physics step and WebSocket JSON broadcast loop."""
@@ -123,23 +148,25 @@ class SimulationManager:
         while self.running:
             start_time = time.perf_counter()
 
-            # Step physics and GNC
-            async with self.lock:
-                self.latest_telemetry = gnc_engine.step_environment(self.env, self.dt)
-                payload_str = json.dumps(self.latest_telemetry)
-
-            # Broadcast to connected clients
             async with self.lock:
                 clients = list(self.active_connections)
 
+            # Step physics and broadcast when clients are actively observing
             if clients:
-                disconnected: List[WebSocket] = []
-                for client in clients:
-                    try:
-                        await client.send_text(payload_str)
-                    except Exception:
-                        disconnected.append(client)
+                async with self.lock:
+                    self.latest_telemetry = gnc_engine.step_environment(self.env, self.dt)
+                    payload_str = json.dumps(self.latest_telemetry)
 
+                # Broadcast concurrently to all connected clients
+                results = await asyncio.gather(
+                    *[client.send_text(payload_str) for client in clients],
+                    return_exceptions=True,
+                )
+
+                disconnected = [
+                    client for client, res in zip(clients, results)
+                    if isinstance(res, Exception)
+                ]
                 if disconnected:
                     async with self.lock:
                         for client in disconnected:
@@ -209,9 +236,8 @@ async def websocket_telemetry_endpoint(websocket: WebSocket) -> None:
     await handle_websocket_stream(websocket)
 
 
-@app.get("/")
-def get_root() -> Dict[str, Any]:
-    """Root metadata endpoint."""
+def get_metadata() -> Dict[str, Any]:
+    """Root metadata payload."""
     return {
         "project": "NASA Space Apps Challenge 2026 (NASA-HACK)",
         "track": "Lunar Landing Site Navigator / Space Mission Design Game",
@@ -271,10 +297,42 @@ async def post_pilot_command(cmd: PilotCommandModel) -> Dict[str, Any]:
 
 
 @app.post("/api/reset")
-async def post_reset(drop_altitude: float = 1450.0) -> Dict[str, Any]:
+async def post_reset(
+    drop_altitude: Optional[float] = None,
+    body: Optional[ResetModel] = None,
+) -> Dict[str, Any]:
     """Reset simulation to initial drop conditions."""
-    await sim_manager.apply_command({"command": "reset", "drop_altitude": drop_altitude})
-    return {"status": "reset", "initial_altitude": drop_altitude}
+    alt = 1450.0
+    if drop_altitude is not None:
+        alt = drop_altitude
+    elif body and body.drop_altitude is not None:
+        alt = body.drop_altitude
+    await sim_manager.apply_command({"command": "reset", "drop_altitude": alt})
+    return {"status": "reset", "initial_altitude": alt}
+
+
+# Mount built production frontend if present (for single-command execution)
+FRONTEND_DIST = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend", "dist"
+)
+if os.path.exists(FRONTEND_DIST):
+    import os.path
+    from fastapi.staticfiles import StaticFiles
+
+    @app.get("/api")
+    @app.get("/api/info")
+    def get_api_info() -> Dict[str, Any]:
+        """API metadata endpoint."""
+        return get_metadata()
+
+    app.mount("/", StaticFiles(directory=FRONTEND_DIST, html=True), name="frontend")
+else:
+    @app.get("/")
+    @app.get("/api")
+    @app.get("/api/info")
+    def get_root() -> Dict[str, Any]:
+        """Root metadata endpoint."""
+        return get_metadata()
 
 
 if __name__ == "__main__":

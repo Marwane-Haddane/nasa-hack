@@ -134,6 +134,8 @@ export interface PilotCommand {
   gimbal_yaw?: number;        // -20 to +20 degrees
   rcs_roll?: number;          // -1.0 to 1.0
   disturbance_vector?: [number, number]; // Wind/drift injection in m/s [Wx, Wy]
+  command?: string;           // Special commands (e.g. 'reset')
+  drop_altitude?: number;     // Drop altitude for reset in meters
 }
 
 /**
