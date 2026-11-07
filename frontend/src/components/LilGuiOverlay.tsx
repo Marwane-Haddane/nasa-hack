@@ -31,16 +31,17 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       })) as unknown as typeof window.matchMedia;
     }
 
-    // 1. Right GUI: Pilot Input & Vehicle Parameters (Matching Photo 2)
+    // ==========================================
+    // 1. Right GUI: Pilot Input (Matching Photo 1:1)
+    // ==========================================
     const guiRight = new GUI({
       title: '👨‍🚀 Pilot Input',
       container: rightGuiContainerRef.current,
-      width: 320,
-      autoPlace: false
+      width: 255,
+      autoPlace: false,
     });
 
     const rocketSettings = {
-      vehicleModel: config.vehicleModel === 'DROPPER_X' ? 'Lunar Lander (Nova-C)' : 'Saturn V (Apollo)',
       fuelType: 'RP-1/LOX',
       initialFuelMass: 2640000,
       dryMass: 330000,
@@ -49,7 +50,7 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       liftCoefficient: 0.05,
       nozzleCount: 5,
       exitArea: 1.8,
-      throatArea: 0.25
+      throatArea: 0.25,
     };
 
     const envSettings = {
@@ -59,38 +60,34 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       gravity: 9.80665,
       tempLapseRate: 0.0065,
       gasConstant: 287.05,
-      simulationSpeed: 1.0,
-      mode: 'day',
+      simulationSpeed: 0.1,
+      mode: config.lightingMode === 'NIGHT' ? 'night' : 'day',
       atmosphereLayer: 'Troposphere',
-      cameraMode: config.cameraMode.toLowerCase()
+      cameraMode: config.cameraMode ? config.cameraMode.toLowerCase() : 'orbit',
     };
 
-    // Rocket Values Folder
+    // Rocket Values Folder (Open by default)
     const rocketFolder = guiRight.addFolder('🚀 Rocket Values');
-    rocketFolder.add(rocketSettings, 'vehicleModel', ['Saturn V (Apollo)', 'Lunar Lander (Nova-C)']).name('Vehicle Model').onChange((val: string) => {
-      const isDropper = val.includes('Lunar Lander');
-      onConfigChange({ vehicleModel: isDropper ? 'DROPPER_X' : 'SATURN_V' });
-    });
-    rocketFolder.add(rocketSettings, 'fuelType', ['RP-1/LOX', 'LH2/LOX', 'Aerozine 50/NTO']).name('Fuel Type');
+    rocketFolder.add(rocketSettings, 'fuelType', ['RP-1/LOX', 'LH2/LOX']).name('Fuel Type');
     rocketFolder.add(rocketSettings, 'initialFuelMass', 0, 5000000, 100).name('Initial Fuel Mass');
     rocketFolder.add(rocketSettings, 'dryMass', 0, 1000000, 100).name('Rocket Dry Mass');
     rocketFolder.add(rocketSettings, 'crossSectionalArea', 0, 100, 0.1).name('Cross Sectional Area');
     rocketFolder.add(rocketSettings, 'dragCoefficient', 0, 5, 0.1).name('Drag Coefficient');
     rocketFolder.add(rocketSettings, 'liftCoefficient', 0, 5, 0.01).name('Lift Coefficient');
-    rocketFolder.add(rocketSettings, 'nozzleCount', 1, 10, 1).name('Nozzle Count');
+    rocketFolder.add(rocketSettings, 'nozzleCount', 0, 10, 1).name('Nozzle Count');
     rocketFolder.add(rocketSettings, 'exitArea', 0, 100, 0.1).name('Exit Area');
     rocketFolder.add(rocketSettings, 'throatArea', 0, 10, 0.1).name('Throat Area');
     rocketFolder.open();
 
-    // Environment Values Folder
+    // Environment Values Folder (Open by default)
     const envFolder = guiRight.addFolder('🌍 Environment Values');
     envFolder.add(envSettings, 'airDensity', 0, 10, 0.001).name('Air Density');
     envFolder.add(envSettings, 'seaLevelPressure', 0, 200000, 100).name('Sea-Level Pressure');
     envFolder.add(envSettings, 'seaLevelTemp', 0, 4000, 0.1).name('Sea-Level Temp');
-    envFolder.add(envSettings, 'gravity', 0, 20, 0.01).name('Gravity');
+    envFolder.add(envSettings, 'gravity', 0, 200, 0.01).name('Gravity');
     envFolder.add(envSettings, 'tempLapseRate', 0, 1, 0.0001).name('Temp Lapse Rate');
     envFolder.add(envSettings, 'gasConstant', 0, 1000, 0.01).name('Gas Constant');
-    envFolder.add(envSettings, 'simulationSpeed', 0.1, 5.0, 0.1).name('Simulation Speed');
+    envFolder.add(envSettings, 'simulationSpeed', 0, 1, 0.1).name('Simulation Speed');
     envFolder.open();
 
     // Action Controls (Launch & Stop)
@@ -102,139 +99,194 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       stop: () => {
         fallbackSimulator.stop();
       },
-      reset: () => {
-        wsClient.reset(1450.0);
-      }
     };
 
-    const launchController = guiRight.add(actionControls, 'launch').name('🚀 Launch');
-    guiRight.add(actionControls, 'stop').name('⏸ Stop');
-    guiRight.add(actionControls, 'reset').name('↺ Reset');
+    const launchCtrl = guiRight.add(actionControls, 'launch').name('🚀 Launch');
+    launchCtrl.domElement.classList.add('lil-gui-launch-btn');
 
-    // Style the Launch button with vibrant pink/coral as in Photo 2
-    if (launchController.domElement) {
-      launchController.domElement.style.background = '#e11d48';
-      launchController.domElement.style.color = '#ffffff';
-      launchController.domElement.style.fontWeight = 'bold';
-    }
+    const stopCtrl = guiRight.add(actionControls, 'stop').name('⏸ Stop');
+    stopCtrl.domElement.classList.add('lil-gui-stop-btn');
 
-    guiRight.add(envSettings, 'mode', ['day', 'night', 'lunar south pole']).name('mode').onChange((val: string) => {
-      let mode: EnvironmentLightingMode = 'DAY';
-      if (val === 'night') mode = 'NIGHT';
-      else if (val.includes('lunar')) mode = 'LUNAR';
-      onConfigChange({ lightingMode: mode });
-    });
+    guiRight
+      .add(envSettings, 'mode', ['day', 'night'])
+      .name('mode')
+      .onChange((val: string) => {
+        const mode: EnvironmentLightingMode = val === 'night' ? 'NIGHT' : 'DAY';
+        onConfigChange({ lightingMode: mode });
+      });
 
-    const layerController = guiRight.add(envSettings, 'atmosphereLayer').name('Atmosphere Layer').listen();
-    if (layerController.domElement) {
-      const input = layerController.domElement.querySelector('input');
-      if (input) {
-        input.style.color = '#10b981';
-        input.style.fontWeight = 'bold';
-      }
-    }
+    const atmoCtrl = guiRight.add(envSettings, 'atmosphereLayer').name('Atmosphere Layer').disable();
+    atmoCtrl.domElement.classList.add('lil-gui-atmosphere-layer');
 
-    guiRight.add(envSettings, 'cameraMode', ['orbit', 'chase', 'cockpit', 'landing_pad']).name('Camera Mode').onChange((val: string) => {
-      onConfigChange({ cameraMode: val.toUpperCase() as CameraMode });
-    });
+    guiRight
+      .add(envSettings, 'cameraMode', ['orbit', 'first', 'follow'])
+      .name('Camera Mode')
+      .onChange((val: string) => {
+        let cam: CameraMode = 'ORBIT';
+        if (val === 'first') cam = 'COCKPIT';
+        else if (val === 'follow') cam = 'CHASE';
+        onConfigChange({ cameraMode: cam });
+      });
 
-    guiRight.add({ shortcut: 'Press V' }, 'shortcut').name('⌨ Change camera mode').disable();
+    guiRight.add({ shortcut: 'Press V' }, 'shortcut').name('📷 Change camera mode').disable();
 
-    // 2. Left GUI: Flight Data (Matching Photo 2)
+    // ==========================================
+    // 2. Left GUI: Flight Data (Matching Photo 1:1)
+    // ==========================================
     const guiLeft = new GUI({
       title: '📡 Flight Data',
       container: leftGuiContainerRef.current,
-      width: 320,
-      autoPlace: false
+      width: 255,
+      autoPlace: false,
     });
 
     const flightData = {
       rocketHeight: '0.90 m',
       time: '0.00',
-      pos_x: 0, pos_y: 0, pos_z: 0,
-      vel_x: 0, vel_y: 0, vel_z: 0,
-      acc_x: 0, acc_y: 0, acc_z: 0,
-      ang_x: 0, ang_y: 0, ang_z: 0,
-      angvel_x: 0, angvel_y: 0, angvel_z: 0,
-      angacc_x: 0, angacc_y: 0, angacc_z: 0,
-      angle_of_attack: '0.00°',
-      totalForce: '29166288.66 N',
-      weightForce: '29166288.66 N',
-      dragForce: '+ 0.00 N',
-      liftForce: '+ 0.00 N',
-      thrustForce: '+ 0.00 N',
-      fuelText: 'Fuel: 2640000.0 / 2640000.0 kg (100%)'
+      angle_of_attack: '0.00',
     };
 
-    guiLeft.add(flightData, 'rocketHeight').name('Rocket Height').listen();
-    guiLeft.add(flightData, 'time').name('Time').listen();
+    const heightCtrl = guiLeft.add(flightData, 'rocketHeight').name('Rocket Height').listen().disable();
+    const timeCtrl = guiLeft.add(flightData, 'time').name('Time').listen().disable();
 
-    // Position Folder
-    const posFolder = guiLeft.addFolder('Position');
-    posFolder.close();
-    posFolder.add(flightData, 'pos_x').name('X (m)').listen();
-    posFolder.add(flightData, 'pos_y').name('Y (m)').listen();
-    posFolder.add(flightData, 'pos_z').name('Z (m)').listen();
+    if (heightCtrl.domElement) {
+      const inp = heightCtrl.domElement.querySelector('input');
+      if (inp) {
+        inp.style.color = '#a3e635';
+        inp.style.fontWeight = 'bold';
+      }
+    }
+    if (timeCtrl.domElement) {
+      const inp = timeCtrl.domElement.querySelector('input');
+      if (inp) {
+        inp.style.color = '#a3e635';
+        inp.style.fontWeight = 'bold';
+      }
+    }
 
-    // Velocity Folder
-    const velFolder = guiLeft.addFolder('Velocity');
-    velFolder.close();
-    velFolder.add(flightData, 'vel_x').name('Vx (m/s)').listen();
-    velFolder.add(flightData, 'vel_y').name('Vy (m/s)').listen();
-    velFolder.add(flightData, 'vel_z').name('Vz (m/s)').listen();
+    // Helper to compute vector direction arrow matching reference repo GuiController
+    const getVectorMainArrow = (vec: [number, number, number], threshold = 0.01): string => {
+      const [x, y, z] = vec;
+      const absX = Math.abs(x);
+      const absY = Math.abs(y);
+      const absZ = Math.abs(z);
+      if (absX < threshold && absY < threshold && absZ < threshold) return '•';
+      if (absY >= absX && absY >= absZ) return y > 0 ? '↑' : '↓';
+      if (absX >= absY && absX >= absZ) return x > 0 ? '→' : '←';
+      return z > 0 ? 'Z↑' : 'Z↓';
+    };
 
-    // Acceleration Folder
-    const accFolder = guiLeft.addFolder('Acceleration');
-    accFolder.close();
-    accFolder.add(flightData, 'acc_x').name('Ax (m/s²)').listen();
-    accFolder.add(flightData, 'acc_y').name('Ay (m/s²)').listen();
-    accFolder.add(flightData, 'acc_z').name('Az (m/s²)').listen();
+    interface VectorFolderRef {
+      folder: GUI;
+      label: string;
+      unit: string;
+      vector: { x: number; y: number; z: number };
+      titleElement: HTMLElement | null;
+      extraControllers?: { ctrl: any; label: string; value: any }[];
+    }
 
-    // Angular Folder
-    const angFolder = guiLeft.addFolder('angular');
-    angFolder.close();
-    angFolder.add(flightData, 'ang_x').name('Roll (rad)').listen();
-    angFolder.add(flightData, 'ang_y').name('Pitch (rad)').listen();
-    angFolder.add(flightData, 'ang_z').name('Yaw (rad)').listen();
+    const vectorFolders: VectorFolderRef[] = [];
 
-    // Angular Velocity Folder
-    const angVelFolder = guiLeft.addFolder('angularVelocity');
-    angVelFolder.close();
-    angVelFolder.add(flightData, 'angvel_x').name('wx (rad/s)').listen();
-    angVelFolder.add(flightData, 'angvel_y').name('wy (rad/s)').listen();
-    angVelFolder.add(flightData, 'angvel_z').name('wz (rad/s)').listen();
+    const createVectorFolder = (
+      label: string,
+      unit: string,
+      initialVec: [number, number, number] = [0, 0, 0],
+      extraMonitors: { label: string; initial: any }[] = []
+    ): VectorFolderRef => {
+      const folder = guiLeft.addFolder(label);
+      folder.close();
 
-    // Angular Acceleration Folder
-    const angAccFolder = guiLeft.addFolder('angularAcceleration');
-    angAccFolder.close();
-    angAccFolder.add(flightData, 'angacc_x').name('ax (rad/s²)').listen();
-    angAccFolder.add(flightData, 'angacc_y').name('ay (rad/s²)').listen();
-    angAccFolder.add(flightData, 'angacc_z').name('az (rad/s²)').listen();
+      const vector = { x: initialVec[0], y: initialVec[1], z: initialVec[2] };
+      folder.add(vector, 'x').name('X').listen().disable();
+      folder.add(vector, 'y').name('Y').listen().disable();
+      folder.add(vector, 'z').name('Z').listen().disable();
 
-    guiLeft.add(flightData, 'angle_of_attack').name('angle_of_attack').listen();
+      const extraControllers: { ctrl: any; label: string; value: any }[] = [];
+      for (const extra of extraMonitors) {
+        const holder = { [extra.label]: extra.initial };
+        const ctrl = folder.add(holder, extra.label).listen().disable();
+        extraControllers.push({ ctrl, label: extra.label, value: extra.initial });
+      }
 
-    // Forces Folders
-    const totalForceFolder = guiLeft.addFolder('Total Force');
-    totalForceFolder.close();
-    totalForceFolder.add(flightData, 'totalForce').name('Magnitude').listen();
+      const titleElement = folder.domElement.querySelector('.title') as HTMLElement | null;
+      const ref: VectorFolderRef = {
+        folder,
+        label,
+        unit,
+        vector,
+        titleElement,
+        extraControllers,
+      };
 
-    const weightForceFolder = guiLeft.addFolder('Weight Force');
-    weightForceFolder.close();
-    weightForceFolder.add(flightData, 'weightForce').name('Magnitude').listen();
+      const mag = Math.sqrt(initialVec[0] ** 2 + initialVec[1] ** 2 + initialVec[2] ** 2).toFixed(2);
+      const arrow = getVectorMainArrow(initialVec);
+      if (titleElement) {
+        titleElement.innerHTML = `${label}<span style="float: right; font-weight: normal; font-size: 11px; margin-right: 4px;">${arrow}  ${mag} ${unit}</span>`;
+      }
 
-    const dragForceFolder = guiLeft.addFolder('Drag Force');
-    dragForceFolder.close();
-    dragForceFolder.add(flightData, 'dragForce').name('Magnitude').listen();
+      vectorFolders.push(ref);
+      return ref;
+    };
 
-    const liftForceFolder = guiLeft.addFolder('Lift Force');
-    liftForceFolder.close();
-    liftForceFolder.add(flightData, 'liftForce').name('Magnitude').listen();
+    // 1. Position
+    const posFolderRef = createVectorFolder('Position', 'm', [0, 1.0, 0]);
 
-    const thrustForceFolder = guiLeft.addFolder('Thrust Force');
-    thrustForceFolder.close();
-    thrustForceFolder.add(flightData, 'thrustForce').name('Magnitude').listen();
+    // 2. Velocity
+    const velFolderRef = createVectorFolder('Velocity', 'm·s⁻¹', [0, 0, 0]);
 
-    // Fuel Level with Visual Progress Bar (Exactly like Photo 2)
+    // 3. Acceleration
+    const accFolderRef = createVectorFolder('Acceleration', 'm·s⁻²', [0, 0, 0]);
+
+    // 4. angular
+    const angFolderRef = createVectorFolder('angular', 'rad', [0, 0, 0]);
+
+    // 5. angularVelocity
+    const angVelFolderRef = createVectorFolder('angularVelocity', 'rad·s⁻¹', [0, 0, 0]);
+
+    // 6. angularAcceleration
+    const angAccFolderRef = createVectorFolder('angularAcceleration', 'rad·s⁻²', [0, 0, 0]);
+
+    // 7. angle_of_attack
+    const aoaCtrl = guiLeft.add(flightData, 'angle_of_attack').name('angle_of_attack').listen().disable();
+    if (aoaCtrl.domElement) {
+      const inp = aoaCtrl.domElement.querySelector('input');
+      if (inp) {
+        inp.style.color = '#a3e635';
+        inp.style.fontWeight = 'bold';
+      }
+    }
+
+    // 8. Total Force
+    const totalForceRef = createVectorFolder('Total Force', 'N', [0, -29166288.66, 0]);
+
+    // 9. Weight Force
+    const weightForceRef = createVectorFolder('Weight Force', 'N', [0, -29166288.66, 0], [
+      { label: 'Gravity Acceleration', initial: '9.81 m/s²' },
+      { label: 'Weight Direction', initial: '(0.00, -1.00, 0.00)' },
+    ]);
+
+    // 10. Drag Force
+    const dragForceRef = createVectorFolder('Drag Force', 'N', [0, 0, 0], [
+      { label: 'Drag Magnitude', initial: '0.00 N' },
+      { label: 'Drag Direction', initial: '(0.00, 0.00, 0.00)' },
+    ]);
+
+    // 11. Lift Force
+    const liftForceRef = createVectorFolder('Lift Force', 'N', [0, 0, 0], [
+      { label: 'Lift Magnitude', initial: '0.00 N' },
+      { label: 'Lift Direction', initial: '(0.00, 0.00, 0.00)' },
+    ]);
+
+    // 12. Thrust Force
+    const thrustForceRef = createVectorFolder('Thrust Force', 'N', [0, 0, 0], [
+      { label: 'Ambient Pressure', initial: '101325.00 Pa' },
+      { label: 'Exhaust Velocity', initial: '0.00 m/s' },
+      { label: 'Mass Flow Rate', initial: '0.0000 kg/s' },
+      { label: 'Chamber Pressure', initial: '7000000 Pa' },
+      { label: 'Chamber Temp', initial: '3500.00 K' },
+    ]);
+
+    // 13. Fuel Level with Progress Bar (Open by default, matching Photo 1:1)
     const fuelFolder = guiLeft.addFolder('Fuel Level');
     fuelFolder.open();
 
@@ -242,14 +294,14 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
     fuelContainer.style.display = 'flex';
     fuelContainer.style.flexDirection = 'column';
     fuelContainer.style.alignItems = 'stretch';
-    fuelContainer.style.padding = '6px 4px';
+    fuelContainer.style.padding = '4px 6px 8px 6px';
 
     const progressBar = document.createElement('div');
-    progressBar.style.height = '20px';
-    progressBar.style.border = '1px solid rgba(255, 255, 255, 0.2)';
-    progressBar.style.borderRadius = '4px';
+    progressBar.style.height = '18px';
+    progressBar.style.border = '1px solid rgba(255, 255, 255, 0.3)';
+    progressBar.style.borderRadius = '3px';
     progressBar.style.overflow = 'hidden';
-    progressBar.style.background = 'rgba(0, 0, 0, 0.4)';
+    progressBar.style.background = 'rgba(0, 0, 0, 0.5)';
     progressBar.style.position = 'relative';
 
     const progressFill = document.createElement('div');
@@ -259,78 +311,125 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
     progressFill.style.transition = 'width 0.2s ease-out, background 0.3s';
     progressBar.appendChild(progressFill);
 
-    const fuelLabel = document.createElement('div');
-    fuelLabel.style.position = 'absolute';
-    fuelLabel.style.top = '0';
-    fuelLabel.style.left = '0';
-    fuelLabel.style.width = '100%';
-    fuelLabel.style.height = '100%';
-    fuelLabel.style.display = 'flex';
-    fuelLabel.style.alignItems = 'center';
-    fuelLabel.style.justifyContent = 'center';
-    fuelLabel.style.fontSize = '11px';
-    fuelLabel.style.fontWeight = 'bold';
-    fuelLabel.style.color = '#ffffff';
-    fuelLabel.style.textShadow = '0 1px 2px rgba(0,0,0,0.8)';
-    fuelLabel.textContent = 'Fuel: 650.0 / 650.0 kg (100%)';
-    progressBar.appendChild(fuelLabel);
+    const fuelText = document.createElement('div');
+    fuelText.style.textAlign = 'center';
+    fuelText.style.fontSize = '11px';
+    fuelText.style.fontWeight = 'bold';
+    fuelText.style.color = '#ffffff';
+    fuelText.style.marginTop = '4px';
+    fuelText.textContent = 'Fuel: 2640000.0 / 2640000.0 kg (100%)';
 
     fuelContainer.appendChild(progressBar);
+    fuelContainer.appendChild(fuelText);
 
-    const childrenContainer = fuelFolder.domElement.querySelector('.children');
-    if (childrenContainer) {
-      childrenContainer.appendChild(fuelContainer);
+    const fuelChildren = fuelFolder.domElement.querySelector('.children');
+    if (fuelChildren) {
+      fuelChildren.appendChild(fuelContainer);
     } else {
       fuelFolder.domElement.appendChild(fuelContainer);
     }
 
-    // Subscribe to Telemetry Stream to live-update all fields
+    // 14. Rocket Collapsible Folder
+    const rocketStaticFolder = guiLeft.addFolder('Rocket');
+    rocketStaticFolder.close();
+    const rocketDisplay = {
+      fuelType: 'RP-1/LOX',
+      initialFuelMass: '2640000.00 kg',
+      nowFuelMass: '2640000.00 kg',
+      diameter: '10.10 m',
+      dryMass: '330000 kg',
+      totalMass: '2970000.00 kg',
+      crossSectionArea: '10.1 m²',
+      dragCoefficient: 0.3,
+      liftCoefficient: 0.05,
+      nozzleCount: 5,
+      exitArea: '1.8 m²',
+      throatArea: '0.25 m²',
+    };
+    for (const key of Object.keys(rocketDisplay)) {
+      rocketStaticFolder.add(rocketDisplay, key as any).listen().disable();
+    }
+
+    // 15. Environment Collapsible Folder
+    const envStaticFolder = guiLeft.addFolder('Environment');
+    envStaticFolder.close();
+    const envDisplay = {
+      airDensity: '1.2250 kg/m³',
+      seaLevelPressure: '101,325 Pa',
+    };
+    for (const key of Object.keys(envDisplay)) {
+      envStaticFolder.add(envDisplay, key as any).listen().disable();
+    }
+
+    // Function to update vector folder magnitudes and title arrows
+    const updateVectorFolder = (
+      ref: VectorFolderRef,
+      vec: [number, number, number],
+      extras?: Record<string, string>
+    ) => {
+      ref.vector.x = Number(vec[0].toFixed(2));
+      ref.vector.y = Number(vec[1].toFixed(2));
+      ref.vector.z = Number(vec[2].toFixed(2));
+
+      const mag = Math.sqrt(vec[0] ** 2 + vec[1] ** 2 + vec[2] ** 2).toFixed(2);
+      const arrow = getVectorMainArrow(vec);
+      if (ref.titleElement) {
+        ref.titleElement.innerHTML = `${ref.label}<span style="float: right; font-weight: normal; font-size: 11px; margin-right: 4px;">${arrow}  ${mag} ${ref.unit}</span>`;
+      }
+
+      if (extras && ref.extraControllers) {
+        for (const ec of ref.extraControllers) {
+          if (extras[ec.label] !== undefined) {
+            ec.ctrl.setValue(extras[ec.label]);
+          }
+        }
+      }
+    };
+
+    // Telemetry subscriber to bind real flight physics values
     const unsubscribe = telemetryStore.subscribeTelemetry((packet: TelemetryPacket) => {
-      flightData.rocketHeight = `${packet.position.z.toFixed(2)} m`;
+      const alt = packet.position.z >= 0 ? packet.position.z : 0.9;
+      flightData.rocketHeight = `${alt.toFixed(2)} m`;
       flightData.time = `${packet.timestamp.toFixed(2)}`;
+      flightData.angle_of_attack = `${packet.euler.tilt.toFixed(2)}`;
 
-      flightData.pos_x = Number(packet.position.x.toFixed(2));
-      flightData.pos_y = Number(packet.position.y.toFixed(2));
-      flightData.pos_z = Number(packet.position.z.toFixed(2));
+      // Update vectors
+      updateVectorFolder(posFolderRef, [packet.position.x, alt, packet.position.y]);
+      updateVectorFolder(velFolderRef, [packet.velocity.x, packet.velocity.vz ?? packet.velocity.z, packet.velocity.y]);
+      updateVectorFolder(accFolderRef, [0, packet.velocity.vz !== undefined ? packet.velocity.vz * 0.1 : 0, 0]);
+      updateVectorFolder(angFolderRef, [packet.euler.roll, packet.euler.pitch, packet.euler.yaw]);
+      updateVectorFolder(angVelFolderRef, [packet.angular_velocity.wx, packet.angular_velocity.wy, packet.angular_velocity.wz]);
+      updateVectorFolder(angAccFolderRef, [0, 0, 0]);
 
-      flightData.vel_x = Number(packet.velocity.x.toFixed(2));
-      flightData.vel_y = Number(packet.velocity.y.toFixed(2));
-      flightData.vel_z = Number(packet.velocity.z.toFixed(2));
-
-      flightData.ang_x = Number(packet.euler.roll.toFixed(2));
-      flightData.ang_y = Number(packet.euler.pitch.toFixed(2));
-      flightData.ang_z = Number(packet.euler.yaw.toFixed(2));
-
-      flightData.angvel_x = Number(packet.angular_velocity.wx.toFixed(3));
-      flightData.angvel_y = Number(packet.angular_velocity.wy.toFixed(3));
-      flightData.angvel_z = Number(packet.angular_velocity.wz.toFixed(3));
-
-      flightData.angle_of_attack = `${packet.euler.tilt.toFixed(2)}°`;
-
+      // Forces
       const thrustN = packet.thrust.newtons;
-      const weightN = packet.mass.total * (config.lightingMode === 'LUNAR' ? 1.62 : 9.81);
-      flightData.thrustForce = `${thrustN.toFixed(2)} N`;
-      flightData.weightForce = `${weightN.toFixed(2)} N`;
-      flightData.totalForce = `${Math.abs(thrustN - weightN).toFixed(2)} N`;
+      const weightN = packet.mass.total * 9.80665;
+      updateVectorFolder(totalForceRef, [0, thrustN - weightN, 0]);
+      updateVectorFolder(weightForceRef, [0, -weightN, 0], {
+        'Gravity Acceleration': '9.81 m/s²',
+        'Weight Direction': '(0.00, -1.00, 0.00)',
+      });
+      updateVectorFolder(dragForceRef, [0, 0, 0], {
+        'Drag Magnitude': '0.00 N',
+        'Drag Direction': '(0.00, 0.00, 0.00)',
+      });
+      updateVectorFolder(liftForceRef, [0, 0, 0], {
+        'Lift Magnitude': '0.00 N',
+        'Lift Direction': '(0.00, 0.00, 0.00)',
+      });
+      updateVectorFolder(thrustForceRef, [0, thrustN, 0]);
 
-      // Update Fuel Bar
+      // Fuel bar
       const pct = Math.max(0, Math.min(100, packet.fuel.percentage));
       progressFill.style.width = `${pct}%`;
-      if (pct > 50) progressFill.style.background = '#4caf50';
-      else if (pct > 20) progressFill.style.background = '#ffb300';
-      else progressFill.style.background = '#f44336';
-      fuelLabel.textContent = `Fuel: ${packet.fuel.mass.toFixed(1)} / ${packet.fuel.max_mass.toFixed(1)} kg (${pct.toFixed(0)}%)`;
+      fuelText.textContent = `Fuel: ${(2640000 * (pct / 100)).toFixed(1)} / 2640000.0 kg (${pct.toFixed(0)}%)`;
 
-      // Update Atmosphere Layer text
-      const alt = packet.position.z;
-      if (config.lightingMode === 'LUNAR') {
-        envSettings.atmosphereLayer = 'Lunar Vacuum';
-      } else {
-        if (alt < 12000) envSettings.atmosphereLayer = 'Troposphere';
-        else if (alt < 50000) envSettings.atmosphereLayer = 'Stratosphere';
-        else if (alt < 85000) envSettings.atmosphereLayer = 'Mesosphere';
-        else envSettings.atmosphereLayer = 'Thermosphere';
-      }
+      // Atmosphere Layer update
+      if (alt < 12000) envSettings.atmosphereLayer = 'Troposphere';
+      else if (alt < 50000) envSettings.atmosphereLayer = 'Stratosphere';
+      else if (alt < 85000) envSettings.atmosphereLayer = 'Mesosphere';
+      else envSettings.atmosphereLayer = 'Thermosphere';
+      atmoCtrl.setValue(envSettings.atmosphereLayer);
     });
 
     return () => {
@@ -342,31 +441,31 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
 
   return (
     <>
-      {/* Left GUI Container for Flight Data */}
+      {/* Left GUI Container for pure Flight Data */}
       <div
         ref={leftGuiContainerRef}
         className="lil-gui-left-container pointer-events-auto"
         style={{
           position: 'absolute',
-          top: '12px',
-          left: '12px',
+          top: '0px',
+          left: '0px',
           zIndex: 50,
-          maxHeight: 'calc(100vh - 24px)',
-          overflowY: 'auto'
+          maxHeight: '100vh',
+          overflowY: 'auto',
         }}
       />
 
-      {/* Right GUI Container for Pilot Input */}
+      {/* Right GUI Container for pure Pilot Input */}
       <div
         ref={rightGuiContainerRef}
         className="lil-gui-right-container pointer-events-auto"
         style={{
           position: 'absolute',
-          top: '12px',
-          right: '12px',
+          top: '0px',
+          right: '0px',
           zIndex: 50,
-          maxHeight: 'calc(100vh - 24px)',
-          overflowY: 'auto'
+          maxHeight: '100vh',
+          overflowY: 'auto',
         }}
       />
     </>

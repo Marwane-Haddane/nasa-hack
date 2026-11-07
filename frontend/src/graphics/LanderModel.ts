@@ -134,10 +134,9 @@ export class LanderModel {
             child.receiveShadow = true;
           }
         });
-        // Scale and center Saturn V so engine rests on pad at Y=0
-        // Saturn base is at Y = -7.0, offset by +7.0 so base is at 0
-        this.saturnMesh.position.set(0, 7.0, 0);
-        this.saturnMesh.scale.set(1.0, 1.0, 1.0);
+        // Position and scale Saturn V upright on launch pad (matching Photo 1:1)
+        this.saturnMesh.position.set(0, 1.0, 0);
+        this.saturnMesh.scale.set(4.0, 4.0, 4.0);
         this.saturnGroup.add(this.saturnMesh);
       },
       undefined,
@@ -157,9 +156,9 @@ export class LanderModel {
             child.receiveShadow = true;
           }
         });
-        // Position pad so launch table flame opening is at (0, 0, 0)
-        this.padMesh.position.set(-1.0, 0.0, 0.0);
-        this.padMesh.scale.set(1.0, 1.0, 1.0);
+        // Position pad with black gantry tower at (-13.9, -10.4, 0) and scale 3.5 (matching Photo 1:1)
+        this.padMesh.position.set(-13.9, -10.4, 0);
+        this.padMesh.scale.set(3.5, 3.5, 3.5);
         this.launcherPadGroup.add(this.padMesh);
       },
       undefined,

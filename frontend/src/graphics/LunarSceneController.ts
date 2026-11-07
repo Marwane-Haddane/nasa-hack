@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { SkyboxEnvironment } from './SkyboxEnvironment';
 import { LunarLighting } from './LunarLighting';
 import { TerrainMesh } from './TerrainMesh';
@@ -21,6 +22,7 @@ export class LunarSceneController {
   public terrain: TerrainMesh;
   public lander: LanderModel;
   public dustEmitter: DustAgitationEmitter;
+  private skyTexture: THREE.Texture | null = null;
 
   // Trajectory Ribbon in 3D
   private trajectoryLine: THREE.Line;
@@ -52,13 +54,31 @@ export class LunarSceneController {
 
     // 1. Scene Void & Sky
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x7da4d9); // Daytime atmospheric blue sky matching Photo 2
+    this.scene.background = new THREE.Color(0x7da4d9); // Daytime atmospheric blue sky matching Photo 1:1
 
-    // 2. Camera - framed to view Saturn V and Launch Pad majestically
+    // Load daytime pure sky EXR texture
+    const exrLoader = new EXRLoader();
+    const exrUrl = (typeof window !== 'undefined' && window.location && window.location.href)
+      ? new URL('/assets/textures/puresky.exr', window.location.href).href
+      : '/assets/textures/puresky.exr';
+    exrLoader.load(
+      exrUrl,
+      (texture) => {
+        texture.mapping = THREE.EquirectangularReflectionMapping;
+        this.skyTexture = texture;
+        if (this.config.lightingMode === 'DAY') {
+          this.scene.background = texture;
+        }
+      },
+      undefined,
+      () => {}
+    );
+
+    // 2. Camera - framed to view Saturn V and Launch Pad majestically (matching Photo 1:1)
     const width = container.clientWidth || window.innerWidth;
     const height = container.clientHeight || window.innerHeight;
-    this.camera = new THREE.PerspectiveCamera(45, width / Math.max(height, 1), 0.1, 20000);
-    this.camera.position.set(0, 16, 42);
+    this.camera = new THREE.PerspectiveCamera(55, width / Math.max(height, 1), 0.1, 25000);
+    this.camera.position.set(10, 8, 55);
 
     // 3. WebGL Renderer
     this.renderer = new THREE.WebGLRenderer({
@@ -79,9 +99,11 @@ export class LunarSceneController {
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
     this.controls.enableDamping = true;
     this.controls.dampingFactor = 0.05;
-    this.controls.maxPolarAngle = Math.PI / 2 - 0.01; // don't clip through ground
+    this.controls.maxPolarAngle = Math.PI / 2 - 0.01;
     this.controls.minDistance = 1.5;
-    this.controls.maxDistance = 2500;
+    this.controls.maxDistance = 5000;
+    this.controls.target.set(0, 18, 0);
+    this.controls.update();
 
     // 5. Initialize Subsystems
     this.skybox = new SkyboxEnvironment(12000, 9000);
@@ -92,7 +114,6 @@ export class LunarSceneController {
 
     this.terrain = new TerrainMesh(2000, 200);
     this.scene.add(this.terrain.group);
-    // Ingest NASA Moon Trek DEM heightmap from FastAPI backend API asynchronously
     this.terrain.loadDemFromApi().catch(() => {});
 
     this.lander = new LanderModel();
@@ -113,7 +134,7 @@ export class LunarSceneController {
     this.trajectoryLine.frustumCulled = false;
     this.scene.add(this.trajectoryLine);
 
-    // Window Resize & Keyboard Binding
+    // Window Resize & Keyboard Binding (Press V to switch camera mode)
     window.addEventListener('resize', this.onWindowResize);
     window.addEventListener('keydown', (e) => {
       if (e.code === 'KeyV') {
@@ -132,8 +153,15 @@ export class LunarSceneController {
   }
 
   public setEnvironmentMode(mode: 'DAY' | 'NIGHT' | 'LUNAR'): void {
+    if (this.terrain) {
+      this.terrain.setEnvironmentMode(mode);
+    }
     if (mode === 'DAY') {
-      this.scene.background = new THREE.Color(0x7da4d9);
+      if (this.skyTexture) {
+        this.scene.background = this.skyTexture;
+      } else {
+        this.scene.background = new THREE.Color(0x7da4d9);
+      }
       this.skybox.starsPoints.visible = false;
       this.lighting.setMode('DAY');
     } else if (mode === 'NIGHT') {
@@ -232,7 +260,7 @@ export class LunarSceneController {
       case 'ORBIT':
       default: {
         this.controls.enabled = true;
-        const targetY = this.config.vehicleModel === 'SATURN_V' ? landerPos.y + 8.0 : landerPos.y + 0.3;
+        const targetY = this.config.vehicleModel === 'SATURN_V' ? landerPos.y + 18.0 : landerPos.y + 0.3;
         this.controls.target.set(landerPos.x, targetY, landerPos.z);
         this.controls.update();
         break;
