@@ -72,7 +72,7 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       dragCoefficient: 0.3,
       liftCoefficient: 0.05,
       nozzleCount: 5,
-      exitArea: 1.8,
+      exitArea: 3.8,
       throatArea: 0.25,
     };
 
@@ -175,7 +175,7 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
         extraControllers.push({ ctrl, label: extra.label, value: extra.initial });
       }
 
-      const titleElement = folder.domElement.querySelector('.title') as HTMLElement | null;
+      const titleElement = ((folder as any).$title || folder.domElement.querySelector('.lil-title') || folder.domElement.querySelector('.title')) as HTMLElement | null;
       const ref: VectorFolderRef = {
         folder,
         label,
@@ -282,7 +282,7 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
     fuelContainer.appendChild(progressBar);
     fuelContainer.appendChild(fuelText);
 
-    const fuelChildren = fuelFolder.domElement.querySelector('.children');
+    const fuelChildren = (fuelFolder as any).$children || fuelFolder.domElement.querySelector('.lil-children') || fuelFolder.domElement.querySelector('.children');
     if (fuelChildren) {
       fuelChildren.appendChild(fuelContainer);
     } else {
@@ -303,7 +303,7 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       dragCoefficient: 0.3,
       liftCoefficient: 0.05,
       nozzleCount: 5,
-      exitArea: '1.8 m²',
+      exitArea: '3.8 m²',
       throatArea: '0.25 m²',
     };
     for (const key of Object.keys(rocketDisplay)) {

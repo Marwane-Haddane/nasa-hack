@@ -19,6 +19,7 @@ export class LanderModel {
   private gltfDropperRoot: THREE.Object3D | null = null;
   private gltfNozzlePivot: THREE.Object3D | null = null;
   private proceduralDropperRoot: THREE.Group;
+  private proceduralSaturnRoot: THREE.Group;
 
   private saturnMesh: THREE.Object3D | null = null;
   private padMesh: THREE.Object3D | null = null;
@@ -45,9 +46,12 @@ export class LanderModel {
     this.plume.mesh.position.set(0, -0.07, 0);
     this.nozzlePivot.add(this.plume.mesh);
 
-    // Build procedural fallback first so something is immediately visible
+    // Build procedural fallback first so something is immediately visible on frame 1
     this.proceduralDropperRoot = this.buildProceduralDropper();
     this.dropperGroup.add(this.proceduralDropperRoot);
+
+    this.proceduralSaturnRoot = this.buildProceduralSaturnV();
+    this.saturnGroup.add(this.proceduralSaturnRoot);
 
     // Asynchronously load all 3D GLB assets
     this.loadDropperAsset('/assets/models/dropper_x.glb');
@@ -137,6 +141,9 @@ export class LanderModel {
         // Position and scale Saturn V upright on launch pad (matching Photo 1:1)
         this.saturnMesh.position.set(0, 1.0, 0);
         this.saturnMesh.scale.set(4.0, 4.0, 4.0);
+        if (this.proceduralSaturnRoot) {
+          this.saturnGroup.remove(this.proceduralSaturnRoot);
+        }
         this.saturnGroup.add(this.saturnMesh);
       },
       undefined,
@@ -340,6 +347,97 @@ export class LanderModel {
     return root;
   }
 
+  private buildProceduralSaturnV(): THREE.Group {
+    const rocket = new THREE.Group();
+    rocket.position.set(0, 1.0, 0);
+    rocket.scale.set(4.0, 4.0, 4.0);
+
+    const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35, metalness: 0.1 });
+    const blackMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.2 });
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.3, metalness: 0.8 });
+    const flagRed = new THREE.MeshBasicMaterial({ color: 0xce1126 });
+    const flagGreen = new THREE.MeshBasicMaterial({ color: 0x007a3d });
+
+    // Stage 1 (S-IC)
+    const stage1Geo = new THREE.CylinderGeometry(1.25, 1.25, 10.5, 32);
+    const stage1 = new THREE.Mesh(stage1Geo, whiteMat);
+    stage1.position.y = 5.25;
+    stage1.castShadow = true;
+    rocket.add(stage1);
+
+    // Black roll markings on Stage 1
+    const stripe1Geo = new THREE.CylinderGeometry(1.255, 1.255, 2.5, 32);
+    const stripe1 = new THREE.Mesh(stripe1Geo, blackMat);
+    stripe1.position.y = 8.5;
+    rocket.add(stripe1);
+
+    // 5 Engine Nozzles
+    const nozzleGeo = new THREE.ConeGeometry(0.48, 1.2, 24, 1, true);
+    nozzleGeo.rotateX(Math.PI);
+    const enginePositions = [
+      [0, 0],
+      [0.65, 0],
+      [-0.65, 0],
+      [0, 0.65],
+      [0, -0.65],
+    ];
+    for (const [ex, ez] of enginePositions) {
+      const nozzle = new THREE.Mesh(nozzleGeo, metalMat);
+      nozzle.position.set(ex, -0.4, ez);
+      rocket.add(nozzle);
+    }
+
+    // Stage 2 (S-II)
+    const stage2Geo = new THREE.CylinderGeometry(1.25, 1.25, 7.5, 32);
+    const stage2 = new THREE.Mesh(stage2Geo, whiteMat);
+    stage2.position.y = 14.25;
+    stage2.castShadow = true;
+    rocket.add(stage2);
+
+    // Interstage ring
+    const interRingGeo = new THREE.CylinderGeometry(1.26, 1.26, 1.2, 32);
+    const interRing = new THREE.Mesh(interRingGeo, blackMat);
+    interRing.position.y = 11.0;
+    rocket.add(interRing);
+
+    // Syrian Flag stripes
+    const redBandGeo = new THREE.CylinderGeometry(1.255, 1.255, 0.35, 32);
+    const redBand = new THREE.Mesh(redBandGeo, flagRed);
+    redBand.position.y = 15.0;
+    rocket.add(redBand);
+
+    const greenBandGeo = new THREE.CylinderGeometry(1.255, 1.255, 0.35, 32);
+    const greenBand = new THREE.Mesh(greenBandGeo, flagGreen);
+    greenBand.position.y = 13.5;
+    rocket.add(greenBand);
+
+    // Stage 3 (S-IVB)
+    const stage3Geo = new THREE.CylinderGeometry(0.82, 1.25, 5.5, 32);
+    const stage3 = new THREE.Mesh(stage3Geo, whiteMat);
+    stage3.position.y = 20.75;
+    stage3.castShadow = true;
+    rocket.add(stage3);
+
+    // Service & Command Module
+    const cmGeo = new THREE.ConeGeometry(0.82, 3.2, 32);
+    const cm = new THREE.Mesh(cmGeo, metalMat);
+    cm.position.y = 25.1;
+    rocket.add(cm);
+
+    // Launch Escape Tower
+    const towerGeo = new THREE.CylinderGeometry(0.06, 0.22, 3.2, 8);
+    const tower = new THREE.Mesh(towerGeo, whiteMat);
+    tower.position.y = 28.3;
+    rocket.add(tower);
+
+    const needleGeo = new THREE.CylinderGeometry(0.02, 0.02, 1.8, 8);
+    const needle = new THREE.Mesh(needleGeo, whiteMat);
+    needle.position.y = 30.6;
+    rocket.add(needle);
+
+    return rocket;
+  }
+
   public updateTelemetry(
     x: number,
     y: number,
@@ -351,12 +449,14 @@ export class LanderModel {
     gimbalPitchDeg: number,
     gimbalYawDeg: number,
     thrustCmd: number,
-    simTime: number
+    simTime: number,
+    isSaturnFlight: boolean = false
   ): void {
     if (this.currentModelType === 'SATURN_V') {
-      // In Saturn V mode: position rocket on the pad, rising with altitude z
-      this.saturnGroup.position.set(x, z, -y);
-      this.saturnGroup.quaternion.set(q1, q2, q3, q0);
+      // In Saturn V mode: keep rocket standing upright on the pad at Y=0 unless actively launching
+      const alt = isSaturnFlight ? z : 0.0;
+      this.saturnGroup.position.set(0, alt, 0);
+      this.saturnGroup.quaternion.set(0, 0, 0, 1);
       // Keep launcher pad fixed at origin on the ground
       this.launcherPadGroup.position.set(0, 0, 0);
     } else {

@@ -157,3 +157,11 @@
   font-weight: 600 !important;
   text-align: right !important;
 }
+
+/* Suppress empty folder placeholder so no 'Empty' label appears */
+.lil-gui .lil-children:empty:before,
+.lil-gui .children:empty:before,
+.lil-gui-left-container .lil-children:empty:before {
+  display: none !important;
+  content: "" !important;
+}

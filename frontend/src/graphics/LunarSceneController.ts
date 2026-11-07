@@ -23,6 +23,8 @@ export class LunarSceneController {
   public lander: LanderModel;
   public dustEmitter: DustAgitationEmitter;
   private skyTexture: THREE.Texture | null = null;
+  private proceduralSkyTexture: THREE.CanvasTexture | null = null;
+  private skyDomeMesh: THREE.Mesh | null = null;
 
   // Trajectory Ribbon in 3D
   private trajectoryLine: THREE.Line;
@@ -58,11 +60,23 @@ export class LunarSceneController {
       ...initialConfig
     };
 
-    // 1. Scene Void & Sky
+    // 1. Scene Void & Procedural Daytime Sky with Clouds matching Photo 1:1
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x7da4d9); // Daytime atmospheric blue sky matching Photo 1:1
+    this.proceduralSkyTexture = this.createDaytimeSkyTexture();
+    this.scene.background = this.proceduralSkyTexture;
 
-    // Load daytime pure sky EXR texture
+    // Dome mesh matching OsamaZerkawi AtmosphereLayer with BackSide
+    const skyGeo = new THREE.SphereGeometry(6000, 48, 48);
+    const skyMat = new THREE.MeshBasicMaterial({
+      map: this.proceduralSkyTexture,
+      side: THREE.BackSide,
+      depthWrite: false,
+    });
+    this.skyDomeMesh = new THREE.Mesh(skyGeo, skyMat);
+    this.skyDomeMesh.position.set(0, -5, 0);
+    this.scene.add(this.skyDomeMesh);
+
+    // Load daytime pure sky EXR texture asynchronously
     const exrLoader = new EXRLoader();
     const exrUrl = (typeof window !== 'undefined' && window.location && window.location.href)
       ? new URL('/assets/textures/puresky.exr', window.location.href).href
@@ -74,6 +88,10 @@ export class LunarSceneController {
         this.skyTexture = texture;
         if (this.config.lightingMode === 'DAY') {
           this.scene.background = texture;
+          if (this.skyDomeMesh) {
+            (this.skyDomeMesh.material as THREE.MeshBasicMaterial).map = texture;
+            (this.skyDomeMesh.material as THREE.MeshBasicMaterial).needsUpdate = true;
+          }
         }
       },
       undefined,
@@ -167,17 +185,22 @@ export class LunarSceneController {
     if (mode === 'DAY') {
       if (this.skyTexture) {
         this.scene.background = this.skyTexture;
+      } else if (this.proceduralSkyTexture) {
+        this.scene.background = this.proceduralSkyTexture;
       } else {
         this.scene.background = new THREE.Color(0x7da4d9);
       }
+      if (this.skyDomeMesh) this.skyDomeMesh.visible = true;
       this.skybox.starsPoints.visible = false;
       this.lighting.setMode('DAY');
     } else if (mode === 'NIGHT') {
       this.scene.background = new THREE.Color(0x060814);
+      if (this.skyDomeMesh) this.skyDomeMesh.visible = false;
       this.skybox.starsPoints.visible = true;
       this.lighting.setMode('NIGHT');
     } else {
       this.scene.background = new THREE.Color(0x000000);
+      if (this.skyDomeMesh) this.skyDomeMesh.visible = false;
       this.skybox.starsPoints.visible = true;
       this.lighting.setMode('LUNAR');
     }
@@ -200,9 +223,80 @@ export class LunarSceneController {
     }
   }
 
+  private createDaytimeSkyTexture(): THREE.CanvasTexture {
+    const canvas = document.createElement('canvas');
+    canvas.width = 2048;
+    canvas.height = 1024;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      return new THREE.CanvasTexture(canvas);
+    }
+
+    // Sky gradient
+    const skyGrad = ctx.createLinearGradient(0, 0, 0, canvas.height);
+    skyGrad.addColorStop(0.0, '#356fc5'); // Zenith deep blue
+    skyGrad.addColorStop(0.35, '#5692e8'); // Mid-sky azure
+    skyGrad.addColorStop(0.70, '#8ec2f8'); // Horizon atmospheric haze
+    skyGrad.addColorStop(1.0, '#c7e2fe'); // Ground haze
+    ctx.fillStyle = skyGrad;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Realistic fluffy cumulus clouds matching Photo 2
+    const drawCloudCluster = (cx: number, cy: number, scale: number) => {
+      const puffs = [
+        { dx: 0, dy: 0, r: 65 },
+        { dx: -45, dy: 10, r: 50 },
+        { dx: 45, dy: 8, r: 52 },
+        { dx: -80, dy: 20, r: 40 },
+        { dx: 80, dy: 18, r: 42 },
+        { dx: -20, dy: -28, r: 48 },
+        { dx: 25, dy: -22, r: 45 },
+        { dx: -10, dy: 22, r: 46 },
+      ];
+
+      for (const p of puffs) {
+        const px = cx + p.dx * scale;
+        const py = cy + p.dy * scale;
+        const pr = p.r * scale;
+
+        const radGrad = ctx.createRadialGradient(px - pr * 0.2, py - pr * 0.25, pr * 0.1, px, py, pr);
+        radGrad.addColorStop(0.0, 'rgba(255, 255, 255, 0.92)');
+        radGrad.addColorStop(0.45, 'rgba(255, 255, 255, 0.82)');
+        radGrad.addColorStop(0.80, 'rgba(235, 242, 252, 0.40)');
+        radGrad.addColorStop(1.0, 'rgba(220, 235, 255, 0.0)');
+
+        ctx.fillStyle = radGrad;
+        ctx.beginPath();
+        ctx.arc(px, py, pr, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+
+    const cloudPositions = [
+      { x: 380, y: 280, s: 1.3 },
+      { x: 680, y: 220, s: 1.6 },
+      { x: 920, y: 250, s: 1.1 },
+      { x: 1250, y: 290, s: 1.4 },
+      { x: 1550, y: 240, s: 1.2 },
+      { x: 1820, y: 260, s: 1.5 },
+      { x: 200, y: 350, s: 0.9 },
+      { x: 800, y: 360, s: 0.8 },
+      { x: 1400, y: 370, s: 0.85 },
+    ];
+
+    for (const c of cloudPositions) {
+      drawCloudCluster(c.x, c.y, c.s);
+    }
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.mapping = THREE.EquirectangularReflectionMapping;
+    return tex;
+  }
+
   public updateTelemetry(telemetry: TelemetryPacket): void {
     this.lastTelemetry = telemetry;
-    const { position, quaternion, thrust, timestamp } = telemetry;
+    const { position, quaternion, thrust, timestamp, stage } = telemetry;
+    const isSaturnFlight = stage?.description === 'Saturn V Powered Flight';
 
     // Update Lander 3D Transformation and Gimbal
     this.lander.updateTelemetry(
@@ -216,21 +310,26 @@ export class LunarSceneController {
       thrust.gimbal_pitch,
       thrust.gimbal_yaw,
       this.config.showPlume ? thrust.cmd : 0.0,
-      timestamp
+      timestamp,
+      isSaturnFlight
     );
 
     // Keep lighting target tracking lander
     this.lighting.updateTarget(this.lander.group.position);
 
-    // Append to 3D trajectory line
-    const currentPos = this.lander.group.position.clone();
-    this.trajectoryPoints.push(currentPos);
-    if (this.trajectoryPoints.length > this.maxTrajectoryPoints) {
-      this.trajectoryPoints.shift();
-    }
+    // Append to 3D trajectory line safely without buffer size warning
+    if (this.config.showTrajectoryLine) {
+      const currentPos = this.lander.group.position.clone();
+      this.trajectoryPoints.push(currentPos);
+      if (this.trajectoryPoints.length > this.maxTrajectoryPoints) {
+        this.trajectoryPoints.shift();
+      }
 
-    if (this.config.showTrajectoryLine && this.trajectoryPoints.length > 1) {
-      this.trajectoryGeo.setFromPoints(this.trajectoryPoints);
+      if (this.trajectoryPoints.length > 1) {
+        this.trajectoryGeo.dispose();
+        this.trajectoryGeo = new THREE.BufferGeometry().setFromPoints(this.trajectoryPoints);
+        this.trajectoryLine.geometry = this.trajectoryGeo;
+      }
     }
   }
 

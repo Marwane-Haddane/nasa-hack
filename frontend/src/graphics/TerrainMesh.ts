@@ -165,7 +165,7 @@ export class TerrainMesh {
     groundTexture.wrapT = THREE.RepeatWrapping;
     groundTexture.repeat.set(30, 30);
 
-    const groundGeo = new THREE.CylinderGeometry(2500, 2500, 1.0, 64);
+    const groundGeo = new THREE.CylinderGeometry(1500, 1500, 0.2, 64);
     const groundMat = new THREE.MeshStandardMaterial({
       map: groundTexture,
       roughness: 0.9,
@@ -173,7 +173,7 @@ export class TerrainMesh {
     });
 
     this.groundMesh = new THREE.Mesh(groundGeo, groundMat);
-    this.groundMesh.position.set(0, 0, 0);
+    this.groundMesh.position.set(0, -0.1, 0);
     this.groundMesh.receiveShadow = true;
     this.launchComplexGroup.add(this.groundMesh);
   }
@@ -258,9 +258,80 @@ export class TerrainMesh {
     this.iteBuildingGroup.add(roofMesh);
   }
 
+  private buildProceduralMountainRidge(): THREE.Group {
+    const group = new THREE.Group();
+
+    // High detail Syrian mountain ridge matching Photo 2 on the right background
+    const width = 800;
+    const depth = 500;
+    const segX = 100;
+    const segZ = 70;
+    const geo = new THREE.PlaneGeometry(width, depth, segX, segZ);
+    geo.rotateX(-Math.PI / 2);
+
+    const pos = geo.attributes.position;
+    const colors = new Float32Array(pos.count * 3);
+
+    for (let i = 0; i < pos.count; i++) {
+      const vx = pos.getX(i);
+      const vz = pos.getZ(i);
+
+      let h = 0;
+      if (vx > -80) {
+        const peak1 = Math.sin((vx + 100) * 0.015) * Math.cos(vz * 0.018) * 35;
+        const peak2 = Math.cos(vx * 0.035 + 0.8) * Math.sin(vz * 0.03) * 16;
+        const crags = Math.sin(vx * 0.08) * Math.cos(vz * 0.07) * 5;
+        const ramp = Math.min(Math.max(0, (vx + 80) / 140), 1.6);
+        h = Math.max(0, (peak1 + peak2 + crags + 20) * ramp);
+      }
+
+      const dist = Math.sqrt(vx * vx + vz * vz);
+      if (dist < 60) {
+        h *= Math.max(0, (dist - 35) / 25);
+      }
+
+      pos.setY(i, h - 0.2);
+
+      const noise = (Math.sin(vx * 0.15) * Math.cos(vz * 0.15) + 1) * 0.5;
+      let r = 0.76, g = 0.62, b = 0.44;
+      if (h > 18) {
+        r = 0.72; g = 0.42; b = 0.32;
+      } else if (noise > 0.62 && h > 5) {
+        r = 0.38; g = 0.45; b = 0.24;
+      } else if (h < 6) {
+        r = 0.82; g = 0.72; b = 0.54;
+      }
+
+      colors[i * 3] = r;
+      colors[i * 3 + 1] = g;
+      colors[i * 3 + 2] = b;
+    }
+
+    geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness: 0.88,
+      metalness: 0.05,
+      flatShading: true,
+    });
+
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(120, 0, -180);
+    mesh.receiveShadow = true;
+    mesh.castShadow = false;
+    group.add(mesh);
+
+    return group;
+  }
+
   private setupMountains(): void {
     this.mountainsGroup = new THREE.Group();
     this.launchComplexGroup.add(this.mountainsGroup);
+
+    // Add immediate procedural mountain ridge matching Photo 2
+    this.mountainsGroup.add(this.buildProceduralMountainRidge());
 
     const loader = new GLTFLoader();
     loader.load(

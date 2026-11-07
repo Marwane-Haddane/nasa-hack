@@ -58,10 +58,11 @@ export class LunarLighting {
 
   public setMode(mode: 'DAY' | 'NIGHT' | 'LUNAR'): void {
     if (mode === 'DAY') {
-      this.sunLight.color.setHex(0xfffaed);
-      this.sunLight.intensity = 2.4;
-      this.sunLight.position.set(400, 800, 300);
-      this.ambientLight.color.setHex(0xb0cce8);
+      this.sunLight.color.setHex(0xffffff);
+      this.sunLight.intensity = 1.1;
+      this.sunLight.position.set(100, 180, 120);
+      this.sunLight.castShadow = false; // Bright realistic daytime illumination matching Photo 1:1
+      this.ambientLight.color.setHex(0xffffff);
       this.ambientLight.intensity = 0.85;
       this.earthshineLight.intensity = 0.0;
     } else if (mode === 'NIGHT') {
