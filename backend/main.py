@@ -239,6 +239,7 @@ async def websocket_telemetry_endpoint(websocket: WebSocket) -> None:
 def get_metadata() -> Dict[str, Any]:
     """Root metadata payload."""
     return {
+        "status": "ok",
         "project": "NASA Space Apps Challenge 2026 (NASA-HACK)",
         "track": "Lunar Landing Site Navigator / Space Mission Design Game",
         "subsystem": "Systems Integration & WebSocket Bridge (Member 3)",
