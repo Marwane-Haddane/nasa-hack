@@ -321,6 +321,22 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       envStaticFolder.add(envDisplay, key as any).listen().disable();
     }
 
+    // 16. AI & Reinforcement Learning (PPO) Policy Folder
+    const rlFolder = guiLeft.addFolder('🧠 RL Guidance Model');
+    rlFolder.close();
+    const rlDisplay = {
+      algorithm: 'PPO Actor-Critic',
+      weightsFile: 'lunar_ppo_v4.pt',
+      architecture: 'MLP [15 -> 128 -> 128 -> 3]',
+      inferenceRate: '60 Hz Closed-Loop',
+      targetVz: '≤ 1.5 m/s (Soft Land)',
+      targetTilt: '≤ 5.0° (Upright)',
+      trainingCLI: 'python -m backend.gnc.train',
+    };
+    for (const key of Object.keys(rlDisplay)) {
+      rlFolder.add(rlDisplay, key as any).listen().disable();
+    }
+
     // Function to update vector folder magnitudes and title arrows
     const updateVectorFolder = (
       ref: VectorFolderRef,
@@ -334,7 +350,11 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       const mag = Math.sqrt(vec[0] ** 2 + vec[1] ** 2 + vec[2] ** 2).toFixed(2);
       const arrow = getVectorMainArrow(vec);
       if (ref.titleElement) {
-        ref.titleElement.innerHTML = `${ref.label}<span style="float: right; font-weight: normal; font-size: 11px; margin-right: 4px;">${arrow}  ${mag} ${ref.unit}</span>`;
+        const newHtml = `${ref.label}<span style="float: right; font-weight: normal; font-size: 11px; margin-right: 4px;">${arrow}  ${mag} ${ref.unit}</span>`;
+        if ((ref as any).lastHtml !== newHtml) {
+          (ref as any).lastHtml = newHtml;
+          ref.titleElement.innerHTML = newHtml;
+        }
       }
 
       if (extras && ref.extraControllers) {
@@ -555,8 +575,8 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
 
     // Telemetry subscriber for live external or non-Saturn flight data
     const unsubscribe = telemetryStore.subscribeTelemetry((packet: TelemetryPacket) => {
-      // In Saturn V mode while parked on pad, ignore fallback lunar lander telemetry
-      if (config.vehicleModel === 'SATURN_V' && !isSaturnLaunching) {
+      // In Saturn V mode, the UI controllers are updated directly by the Saturn physics loop
+      if (config.vehicleModel === 'SATURN_V') {
         return;
       }
 

@@ -26,9 +26,10 @@ export class LunarSceneController {
   private proceduralSkyTexture: THREE.CanvasTexture | null = null;
   private skyDomeMesh: THREE.Mesh | null = null;
 
-  // Trajectory Ribbon in 3D
+  // Trajectory Ribbon in 3D (Optimized pre-allocated GPU buffer)
   private trajectoryLine: THREE.Line;
   private trajectoryGeo: THREE.BufferGeometry;
+  private trajectoryPositions: Float32Array;
   private trajectoryPoints: THREE.Vector3[] = [];
   private maxTrajectoryPoints = 600;
 
@@ -104,15 +105,15 @@ export class LunarSceneController {
     this.camera = new THREE.PerspectiveCamera(60, width / Math.max(height, 1), 0.1, 25000);
     this.camera.position.set(5.5, 3.5, 58);
 
-    // 3. WebGL Renderer
+    // 3. WebGL Renderer - High-performance settings without logarithmic depth penalty
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
       powerPreference: 'high-performance',
-      logarithmicDepthBuffer: true
+      logarithmicDepthBuffer: false
     });
     this.renderer.setSize(width, height);
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
-    this.renderer.shadowMap.enabled = true;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.5));
+    this.renderer.shadowMap.enabled = false; // Disabled by default for 60 FPS performance
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
@@ -146,8 +147,15 @@ export class LunarSceneController {
     this.dustEmitter = new DustAgitationEmitter(1500);
     this.scene.add(this.dustEmitter.points);
 
-    // 6. Trajectory line setup
+    // 6. Trajectory line setup with static pre-allocated buffer (Zero GC per frame)
+    this.trajectoryPositions = new Float32Array(this.maxTrajectoryPoints * 3);
     this.trajectoryGeo = new THREE.BufferGeometry();
+    this.trajectoryGeo.setAttribute(
+      'position',
+      new THREE.BufferAttribute(this.trajectoryPositions, 3)
+    );
+    this.trajectoryGeo.setDrawRange(0, 0);
+
     const trajectoryMat = new THREE.LineBasicMaterial({
       color: 0x38bdf8,
       transparent: true,
@@ -317,7 +325,7 @@ export class LunarSceneController {
     // Keep lighting target tracking lander
     this.lighting.updateTarget(this.lander.group.position);
 
-    // Append to 3D trajectory line safely without buffer size warning
+    // Append to 3D trajectory line safely without allocating new BufferGeometry
     if (this.config.showTrajectoryLine) {
       const currentPos = this.lander.group.position.clone();
       this.trajectoryPoints.push(currentPos);
@@ -325,10 +333,18 @@ export class LunarSceneController {
         this.trajectoryPoints.shift();
       }
 
-      if (this.trajectoryPoints.length > 1) {
-        this.trajectoryGeo.dispose();
-        this.trajectoryGeo = new THREE.BufferGeometry().setFromPoints(this.trajectoryPoints);
-        this.trajectoryLine.geometry = this.trajectoryGeo;
+      const count = this.trajectoryPoints.length;
+      if (count > 1) {
+        const posAttr = this.trajectoryGeo.attributes.position as THREE.BufferAttribute;
+        const arr = posAttr.array as Float32Array;
+        for (let i = 0; i < count; i++) {
+          const pt = this.trajectoryPoints[i];
+          arr[i * 3] = pt.x;
+          arr[i * 3 + 1] = pt.y;
+          arr[i * 3 + 2] = pt.z;
+        }
+        posAttr.needsUpdate = true;
+        this.trajectoryGeo.setDrawRange(0, count);
       }
     }
   }

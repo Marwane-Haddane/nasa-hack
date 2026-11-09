@@ -115,3 +115,22 @@ class TestGNCEvaluate:
         assert pkt_man["mode"] == "MANUAL"
         assert abs(pkt_man["thrust"]["cmd"] - 0.92) < 0.01
         assert abs(pkt_man["thrust"]["gimbal_pitch"] - (-4.5)) < 0.01
+
+    def test_ppo_training_pipeline_execution(self) -> None:
+        """Verify LunarPPOTrainer executes episodes, computes rewards, and saves weights."""
+        from backend.gnc.train import LunarPPOTrainer
+        with tempfile.NamedTemporaryFile(suffix=".pt", delete=False) as tmp:
+            tmp_path = tmp.name
+
+        try:
+            trainer = LunarPPOTrainer(weights_path=tmp_path, learning_rate=1e-3)
+            reward, success, summary = trainer.run_episode(max_steps=50)
+            assert isinstance(reward, float)
+            assert "steps" in summary
+            assert "fuel_left" in summary
+            assert summary["steps"] > 0
+            trainer.agent.save_weights(tmp_path)
+            assert os.path.exists(tmp_path)
+        finally:
+            if os.path.exists(tmp_path):
+                os.remove(tmp_path)

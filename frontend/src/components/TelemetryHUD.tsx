@@ -14,8 +14,15 @@ export const TelemetryHUD: React.FC = () => {
   const [telemetry, setTelemetry] = useState<TelemetryPacket | null>(telemetryStore.getTelemetry());
 
   useEffect(() => {
+    let lastRender = -1000;
+    let lastStatus = '';
     return telemetryStore.subscribeTelemetry((pkt) => {
-      setTelemetry(pkt);
+      const now = performance.now();
+      if (now - lastRender >= 30 || pkt.status !== lastStatus) {
+        lastRender = now;
+        lastStatus = pkt.status;
+        setTelemetry(pkt);
+      }
     });
   }, []);
 

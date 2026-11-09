@@ -21,8 +21,17 @@ export const MissionChecklist: React.FC = () => {
   const [telemetry, setTelemetry] = useState<TelemetryPacket | null>(telemetryStore.getTelemetry());
 
   useEffect(() => {
+    let lastRender = -1000;
+    let lastStageId = -1;
+    let lastStatus = '';
     return telemetryStore.subscribeTelemetry((pkt) => {
-      setTelemetry(pkt);
+      const now = performance.now();
+      if (now - lastRender >= 50 || pkt.stage.id !== lastStageId || pkt.status !== lastStatus) {
+        lastRender = now;
+        lastStageId = pkt.stage.id;
+        lastStatus = pkt.status;
+        setTelemetry(pkt);
+      }
     });
   }, []);
 
