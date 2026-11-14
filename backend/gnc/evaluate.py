@@ -18,7 +18,16 @@ from typing import Any, Dict, Optional, Tuple
 import numpy as np
 
 from ..physics.lunar_environment import G_LUNAR, ISP, G0, T_MAX, LunarEnvironment
+from ..physics.dem_parser import dem_parser
 from .ppo_agent import PPOAgent
+
+# --- Guidance tuning constants ---
+H_ACC = 0.55        # horizontal braking acceleration used for the speed profile (m/s^2)
+H_VMAX = 40.0       # max horizontal speed command (m/s)
+H_GAIN = 0.8        # horizontal velocity loop gain (1/s)
+V_DESCENT_MAX = 25.0  # max descent rate (m/s)
+V_GAIN = 1.0        # vertical velocity loop gain (1/s)
+PPO_BLEND = 0.0     # weight of the PPO network in the final command (0 = off)
 
 WEIGHTS_PATH = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
@@ -35,86 +44,84 @@ class GNCInferenceEngine:
         self.agent = PPOAgent(weights_path=target_path)
 
     def compute_guidance(self, env: LunarEnvironment) -> Tuple[float, float, float]:
-        """Compute autonomous GNC throttle and gimbal commands for current environment state.
+        """Closed-loop guidance based on altitude ABOVE GROUND (AGL) and a braking profile.
 
-        Returns:
-            (throttle, gimbal_pitch, gimbal_yaw)
+        Returns: (throttle, gimbal_pitch_deg, gimbal_yaw_deg)
         """
         if env.is_landed or env.is_crashed:
+            return 0.0, 0.0, 0.0
+        if env.mass_fuel <= 0.0:
             return 0.0, 0.0, 0.0
 
         total_mass = env.mass_dry + env.mass_fuel
 
-        # If vehicle has flameout / zero fuel, no thrust possible
-        if env.mass_fuel <= 0.0:
-            return 0.0, 0.0, 0.0
-
-        # Run PPO Policy forward pass on 15-d state vector
+        # PPO policy forward pass (kept as a small residual, see PPO_BLEND)
         obs = env.get_15d_observation()
         ppo_throttle, ppo_pitch, ppo_yaw = self.agent.predict(obs)
 
-        # Apply multi-phase closed-loop guidance envelope:
-        stage = env.stage_id
+        # --- Altitude above ground (the terrain is NOT flat) ---
+        terrain_z = dem_parser.get_elevation(env.x, env.y)
+        agl = max(0.0, env.z - terrain_z)
 
-        if stage == 1:
-            # Stage 1: Deorbit Burn - Moderate retrograde thrust to shape trajectory & brake initial speed
-            throttle = 0.38
-            pitch = float(np.clip(-env.vx * 0.8, -18.0, 18.0))
-            yaw = float(np.clip(-env.vy * 0.8, -18.0, 18.0))
-
-        elif stage == 2:
-            # Stage 2: Ballistic Drift - Controlled coast with attitude alignment
-            throttle = 0.22
-            pitch = float(np.clip(-env.vx * 0.5, -12.0, 12.0))
-            yaw = float(np.clip(-env.vy * 0.5, -12.0, 12.0))
-
-        elif stage == 3:
-            # Stage 3: Autonomous Divert - Kill horizontal velocity towards landing site (0, 0)
-            target_vx = float(np.clip(-env.x * 0.02, -4.0, 4.0))
-            target_vy = float(np.clip(-env.y * 0.02, -4.0, 4.0))
-            err_vx = env.vx - target_vx
-            err_vy = env.vy - target_vy
-
-            # Bring vertical descent rate to ~ -14 m/s before Stage 4 handover
-            target_vz = -14.0
-            speed_err_z = target_vz - env.vz
-            req_acc_z = G_LUNAR + (speed_err_z * 0.8)
-            throttle = float(np.clip((req_acc_z * total_mass) / T_MAX, 0.30, 0.85))
-
-            pitch = float(np.clip(-err_vx * 2.0, -18.0, 18.0))
-            yaw = float(np.clip(-err_vy * 2.0, -18.0, 18.0))
-
-        elif stage == 4:
-            # Stage 4: Terminal Suicide Burn Deceleration
-            # Dynamic parabolic braking envelope down to 15m, then linear flare to -1.0 m/s
-            if env.z > 15.0:
-                vz_safe_target = -min(15.0, max(2.5, math.sqrt(2.0 * 0.95 * env.z)))
-            else:
-                vz_safe_target = -1.0 - (env.z / 15.0) * 1.5
-
-            # Closed-loop PID vertical throttle: falling faster than target increases throttle up to 1.0
-            speed_error = vz_safe_target - env.vz
-            required_acc = G_LUNAR + (speed_error * 2.2)
-            req_thrust = required_acc * total_mass
-            throttle = float(np.clip(req_thrust / T_MAX, 0.12, 1.0))
-
-            # Lateral stabilization: cancel all horizontal velocity
-            # When z < 5m, clamp gimbal to <= 5 deg to guarantee off-axis tilt <= 2.0° (well below 5.0°)
-            max_gimbal = 5.0 if env.z < 5.0 else (10.0 if env.z < 20.0 else 16.0)
-            pitch = float(np.clip(-env.vx * 3.5, -max_gimbal, max_gimbal))
-            yaw = float(np.clip(-env.vy * 3.5, -max_gimbal, max_gimbal))
-
+        # --- Horizontal guidance: braking profile towards the pad (0, 0) ---
+        dist = math.hypot(env.x, env.y)
+        if dist > 1e-6:
+            ux, uy = -env.x / dist, -env.y / dist
         else:
-            # Stage 5: Touchdown
-            throttle = 0.0
-            pitch = 0.0
-            yaw = 0.0
+            ux, uy = 0.0, 0.0
+        v_des_mag = min(H_VMAX, math.sqrt(2.0 * H_ACC * max(dist - 2.0, 0.0)))
+        if agl < 25.0:
+            v_des_mag *= agl / 25.0      # converge to ~0 horizontal speed near the ground
+        vdx, vdy = ux * v_des_mag, uy * v_des_mag
+        ax_cmd = float(np.clip(H_GAIN * (vdx - env.vx), -1.6, 1.6))
+        ay_cmd = float(np.clip(H_GAIN * (vdy - env.vy), -1.6, 1.6))
 
-        # Blend policy network residual with closed-loop guidance
-        blended_throttle = float(np.clip(0.85 * throttle + 0.15 * ppo_throttle, 0.0, 1.0))
-        blended_pitch = float(np.clip(0.85 * pitch + 0.15 * ppo_pitch, -20.0, 20.0))
-        blended_yaw = float(np.clip(0.85 * yaw + 0.15 * ppo_yaw, -20.0, 20.0))
+        # --- Vertical guidance: descent-rate profile vs AGL ---
+        if agl > 40.0:
+            vz_target = -min(V_DESCENT_MAX, math.sqrt(2.0 * 0.8 * (agl - 40.0)) + 3.0)
+        else:
+            vz_target = -(0.5 + 0.065 * agl)
+        az_cmd = V_GAIN * (vz_target - env.vz)
 
+        # Gimbal limit (also keeps the final tilt below 5 deg)
+        if agl < 20.0:
+            gmax = 5.0
+        elif agl < 40.0:
+            gmax = 8.0
+        else:
+            gmax = 20.0
+
+        # First estimate: throttle for the vertical axis
+        thr_v = total_mass * (G_LUNAR + az_cmd) / T_MAX
+        # While high and still descending, allow extra thrust to brake sideways
+        a_lat = math.hypot(ax_cmd, ay_cmd)
+        thr_lat = total_mass * a_lat / (T_MAX * math.sin(math.radians(gmax)))
+        if agl > 250.0 and env.vz < -1.0:
+            throttle = max(thr_v, min(thr_lat, 0.8))
+        else:
+            throttle = thr_v
+        throttle = float(np.clip(throttle, 0.0, 1.0))
+
+        # Gimbal from lateral acceleration command: a = T/m * sin(gimbal)
+        thrust = max(throttle * T_MAX, 1.0)
+        sp = float(np.clip(ax_cmd * total_mass / thrust, -1.0, 1.0))
+        sy = float(np.clip(ay_cmd * total_mass / thrust, -1.0, 1.0))
+        pitch = float(np.clip(math.degrees(math.asin(sp)), -gmax, gmax))
+        yaw = float(np.clip(math.degrees(math.asin(sy)), -gmax, gmax))
+
+        if env.stage_id == 5:
+            return 0.0, 0.0, 0.0
+
+        # Re-compute vertical throttle taking gimbal cosine into account
+        cos_g = max(0.5, math.cos(math.radians(pitch)) * math.cos(math.radians(yaw)))
+        if not (agl > 250.0 and env.vz < -1.0 and throttle > thr_v):
+            throttle = float(np.clip(total_mass * (G_LUNAR + az_cmd) / (T_MAX * cos_g), 0.0, 1.0))
+
+        # Small residual from the PPO network (PPO_BLEND = 0 -> pure closed-loop guidance)
+        b = PPO_BLEND if agl > 40.0 else 0.0
+        blended_throttle = float(np.clip((1 - b) * throttle + b * ppo_throttle, 0.0, 1.0))
+        blended_pitch = float(np.clip((1 - b) * pitch + b * ppo_pitch, -gmax, gmax))
+        blended_yaw = float(np.clip((1 - b) * yaw + b * ppo_yaw, -gmax, gmax))
         return blended_throttle, blended_pitch, blended_yaw
 
     def step_environment(self, env: LunarEnvironment, dt: float = 1.0 / 60.0) -> Dict[str, Any]:
