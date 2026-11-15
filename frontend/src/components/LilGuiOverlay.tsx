@@ -2,6 +2,7 @@ import React, { useEffect, useRef } from 'react';
 import GUI, { Controller } from 'lil-gui';
 import { telemetryStore } from '../services/telemetryStore';
 import { fallbackSimulator } from '../services/fallbackTelemetry';
+import { wsClient } from '../services/websocket';
 import { VisualizerConfig, CameraMode, EnvironmentLightingMode } from '../types/visualizer';
 import { TelemetryPacket } from '../types/telemetry';
 
@@ -15,6 +16,7 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
   const rightGuiContainerRef = useRef<HTMLDivElement>(null);
   const cameraCtrlRef = useRef<Controller | null>(null);
   const modeCtrlRef = useRef<Controller | null>(null);
+  const missionCtrlRef = useRef<Controller | null>(null);
 
   // Sync cameraMode prop with lil-gui controller when V is pressed or config changes externally
   useEffect(() => {
@@ -337,6 +339,19 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       rlFolder.add(rlDisplay, key as any).listen().disable();
     }
 
+    const rlActions = {
+      activateLunarLanding: () => {
+        if (missionCtrlRef.current) {
+          missionCtrlRef.current.setValue('🌕 Lunar AI Landing (Autopilot)');
+        }
+      },
+      resetDescent: () => {
+        startLunarLanding();
+      },
+    };
+    rlFolder.add(rlActions, 'activateLunarLanding').name('▶️ Activer Alunissage IA');
+    rlFolder.add(rlActions, 'resetDescent').name('🔄 Relancer Descente (1450m)');
+
     // Function to update vector folder magnitudes and title arrows
     const updateVectorFolder = (
       ref: VectorFolderRef,
@@ -365,6 +380,8 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
         }
       }
     };
+
+    let startLunarLanding = () => {};
 
     // Saturn V Real-Time Launch Simulation state
     let isSaturnLaunching = false;
@@ -531,21 +548,58 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       saturnAnimId = requestAnimationFrame(loop);
     };
 
+    startLunarLanding = () => {
+      stopSaturnSimulation();
+      wsClient.reset(1450.0);
+      wsClient.sendCommand({ mode: 'AI' });
+      fallbackSimulator.start((pkt) => telemetryStore.publishTelemetry(pkt));
+    };
+
+    const missionSettings = {
+      mission: config.vehicleModel === 'DROPPER_X' ? '🌕 Lunar AI Landing (Autopilot)' : '🌍 Saturn V (Earth Launch)',
+    };
+
     // Action Controls (Launch & Stop)
     const actionControls = {
       launch: () => {
-        startSaturnSimulation();
+        if (missionSettings.mission.includes('Lunar AI')) {
+          startLunarLanding();
+        } else {
+          startSaturnSimulation();
+        }
       },
       stop: () => {
-        stopSaturnSimulation();
+        if (missionSettings.mission.includes('Lunar AI')) {
+          fallbackSimulator.stop();
+        } else {
+          stopSaturnSimulation();
+        }
       },
     };
 
-    const launchCtrl = guiRight.add(actionControls, 'launch').name('🚀 Launch');
+    const launchCtrl = guiRight.add(actionControls, 'launch').name(config.vehicleModel === 'DROPPER_X' ? '▶️ Run AI Landing' : '🚀 Launch');
     launchCtrl.domElement.classList.add('lil-gui-launch-btn');
 
     const stopCtrl = guiRight.add(actionControls, 'stop').name('⏸ Stop');
     stopCtrl.domElement.classList.add('lil-gui-stop-btn');
+
+    const missionCtrl = guiRight
+      .add(missionSettings, 'mission', ['🌍 Saturn V (Earth Launch)', '🌕 Lunar AI Landing (Autopilot)'])
+      .name('🎯 Mission Mode')
+      .onChange((val: string) => {
+        if (val.includes('Lunar AI')) {
+          stopSaturnSimulation();
+          onConfigChange({ vehicleModel: 'DROPPER_X', lightingMode: 'LUNAR' });
+          launchCtrl.name('▶️ Run AI Landing');
+          startLunarLanding();
+        } else {
+          fallbackSimulator.stop();
+          onConfigChange({ vehicleModel: 'SATURN_V', lightingMode: 'DAY' });
+          launchCtrl.name('🚀 Launch');
+          stopSaturnSimulation();
+        }
+      });
+    missionCtrlRef.current = missionCtrl;
 
     const modeCtrl = guiRight
       .add(envSettings, 'mode', ['day', 'night'])
