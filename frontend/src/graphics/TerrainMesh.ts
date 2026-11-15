@@ -71,7 +71,6 @@ export class TerrainMesh {
   private material: THREE.ShaderMaterial;
   private geometry: THREE.PlaneGeometry;
   private groundMesh: THREE.Mesh | null = null;
-  private iteBuildingGroup: THREE.Group | null = null;
   private mountainsGroup: THREE.Group | null = null;
 
   constructor(size = 2000, segments = 200) {
@@ -139,7 +138,6 @@ export class TerrainMesh {
     this.group.add(this.launchComplexGroup);
 
     this.setupLaunchComplexGround();
-    this.setupIteBuilding();
     this.setupMountains();
 
     // Default to DAY mode: Launch complex visible, lunar terrain hidden
@@ -175,86 +173,6 @@ export class TerrainMesh {
     this.groundMesh.position.set(0, -0.1, 0);
     this.groundMesh.receiveShadow = true;
     this.launchComplexGroup.add(this.groundMesh);
-  }
-
-  private setupIteBuilding(): void {
-    this.iteBuildingGroup = new THREE.Group();
-    this.launchComplexGroup.add(this.iteBuildingGroup);
-
-    const textureLoader = new THREE.TextureLoader();
-    const iteFrontTex = textureLoader.load(this.resolveUrl('/assets/textures/ite/ite_front.jpg'));
-    const iteLeftTex = textureLoader.load(this.resolveUrl('/assets/textures/ite/ite_left.jpg'));
-    const iteTitleTex = textureLoader.load(this.resolveUrl('/assets/textures/ite/ite_title.png'));
-    const iteUpTex = textureLoader.load(this.resolveUrl('/assets/textures/ite/ite_up.jpg'));
-
-    const wallHeight = 100;
-    const wallThickness = 10;
-    const wallLength = 500;
-
-    const wallPositions = [
-      { x: -400, y: wallHeight / 2, z: 300 },
-      { x: -400, y: wallHeight / 2, z: -200 },
-      { x: -150, y: wallHeight / 2, z: 50 },
-      { x: -650, y: wallHeight / 2, z: 50 },
-    ];
-
-    const wallRotations = [
-      { x: 0, y: 0, z: 0 },
-      { x: 0, y: 0, z: 0 },
-      { x: 0, y: Math.PI / 2, z: 0 },
-      { x: 0, y: Math.PI / 2, z: 0 },
-    ];
-
-    const wallTextures = [
-      iteLeftTex,
-      iteLeftTex,
-      iteFrontTex,
-      iteLeftTex,
-    ];
-
-    wallPositions.forEach((pos, index) => {
-      const geometry = new THREE.BoxGeometry(wallLength, wallHeight, wallThickness);
-      const material = new THREE.MeshStandardMaterial({
-        map: wallTextures[index],
-        roughness: 0.6,
-        metalness: 0.1,
-      });
-
-      const wall = new THREE.Mesh(geometry, material);
-      wall.position.set(pos.x, pos.y, pos.z);
-      wall.rotation.set(wallRotations[index].x, wallRotations[index].y, wallRotations[index].z);
-      wall.receiveShadow = true;
-      wall.castShadow = true;
-      this.iteBuildingGroup?.add(wall);
-    });
-
-    // Inscription wall monument ("جامعة دمشق كلية الهندسة المعلوماتية")
-    const titleGeo = new THREE.BoxGeometry(75, 100, 5);
-    const titleMat = new THREE.MeshStandardMaterial({
-      map: iteTitleTex,
-      roughness: 0.5,
-      metalness: 0.1,
-      transparent: true,
-      opacity: 1.0,
-    });
-    const titleWall = new THREE.Mesh(titleGeo, titleMat);
-    titleWall.position.set(-110, 50, -125);
-    titleWall.receiveShadow = true;
-    titleWall.castShadow = true;
-    this.iteBuildingGroup.add(titleWall);
-
-    // Roof
-    const roofGeo = new THREE.BoxGeometry(500, 10, 500);
-    const roofMat = new THREE.MeshStandardMaterial({
-      map: iteUpTex,
-      roughness: 0.7,
-      metalness: 0.1,
-    });
-    const roofMesh = new THREE.Mesh(roofGeo, roofMat);
-    roofMesh.position.set(-400, 95, 50);
-    roofMesh.receiveShadow = true;
-    roofMesh.castShadow = true;
-    this.iteBuildingGroup.add(roofMesh);
   }
 
   private buildProceduralMountainRidge(): THREE.Group {

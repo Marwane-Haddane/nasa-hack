@@ -366,7 +366,7 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
       }
     };
 
-    // Syrian Saturn V Real-Time Launch Simulation state
+    // Saturn V Real-Time Launch Simulation state
     let isSaturnLaunching = false;
     let saturnAnimId: number | null = null;
     let saturnTime = 0.0;

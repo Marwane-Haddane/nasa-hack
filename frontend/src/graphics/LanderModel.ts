@@ -3,6 +3,38 @@ import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { VacuumPlume } from './VacuumPlumeShader';
 import { VehicleModelType } from '../types/visualizer';
 
+export const SATURN_V_FLIGHT_DESCRIPTION = 'Saturn V Powered Flight';
+
+function createPentagramGeometry(radius: number, strokeWidth: number): THREE.BufferGeometry {
+  const outerPoints = Array.from({ length: 5 }, (_, index) => {
+    const angle = -Math.PI / 2 + index * (Math.PI * 2 / 5);
+    return new THREE.Vector2(Math.cos(angle) * radius, Math.sin(angle) * radius);
+  });
+  const order = [0, 2, 4, 1, 3, 0];
+  const vertices: number[] = [];
+  const halfWidth = strokeWidth / 2;
+
+  for (let index = 0; index < order.length - 1; index++) {
+    const from = outerPoints[order[index]];
+    const to = outerPoints[order[index + 1]];
+    const direction = to.clone().sub(from).normalize();
+    const normal = new THREE.Vector2(-direction.y, direction.x).multiplyScalar(halfWidth);
+    const a = from.clone().add(normal);
+    const b = from.clone().sub(normal);
+    const c = to.clone().add(normal);
+    const d = to.clone().sub(normal);
+    vertices.push(
+      a.x, a.y, 0, b.x, b.y, 0, c.x, c.y, 0,
+      c.x, c.y, 0, b.x, b.y, 0, d.x, d.y, 0
+    );
+  }
+
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+  geometry.computeVertexNormals();
+  return geometry;
+}
+
 export class LanderModel {
   public group: THREE.Group;
   public nozzlePivot: THREE.Group;
@@ -55,7 +87,7 @@ export class LanderModel {
 
     // Asynchronously load all 3D GLB assets
     this.loadDropperAsset('/assets/models/dropper_x.glb');
-    this.loadSaturnVAsset('/assets/models/saturn_V_syria.glb');
+    this.loadSaturnVAsset('/assets/models/saturn_V_morocco.glb');
     this.loadLauncherPadAsset('/assets/models/rocket_laucher_pad.glb');
 
     // Default to SATURN_V to match Photo 2
@@ -73,6 +105,18 @@ export class LanderModel {
       this.launcherPadGroup.visible = false;
       this.dropperGroup.visible = true;
     }
+  }
+
+  public getTrackedGroup(): THREE.Group {
+    return this.currentModelType === 'SATURN_V' ? this.saturnGroup : this.dropperGroup;
+  }
+
+  public getTrackedWorldPosition(target = new THREE.Vector3()): THREE.Vector3 {
+    return this.getTrackedGroup().getWorldPosition(target);
+  }
+
+  public getTrackedWorldQuaternion(target = new THREE.Quaternion()): THREE.Quaternion {
+    return this.getTrackedGroup().getWorldQuaternion(target);
   }
 
   private resolveUrl(url: string): string {
@@ -249,6 +293,13 @@ export class LanderModel {
     flagMesh.position.set(0, 0.385, -0.163);
     root.add(flagMesh);
 
+    const dropperFlagStar = new THREE.Mesh(
+      createPentagramGeometry(0.012, 0.002),
+      new THREE.MeshBasicMaterial({ color: 0x006233, side: THREE.DoubleSide })
+    );
+    dropperFlagStar.position.set(0, 0.385, -0.165);
+    root.add(dropperFlagStar);
+
     // 4. Avionics Decks & Tank
     const deckGeo = new THREE.CylinderGeometry(0.145, 0.145, 0.005, 6);
     const deck1 = new THREE.Mesh(deckGeo, frameMetal);
@@ -355,8 +406,8 @@ export class LanderModel {
     const whiteMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.35, metalness: 0.1 });
     const blackMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.4, metalness: 0.2 });
     const metalMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.3, metalness: 0.8 });
-    const flagRed = new THREE.MeshBasicMaterial({ color: 0xce1126 });
-    const flagGreen = new THREE.MeshBasicMaterial({ color: 0x007a3d });
+    const moroccanFlagRed = new THREE.MeshBasicMaterial({ color: 0xc1272d, side: THREE.DoubleSide });
+    const moroccanFlagGreen = new THREE.MeshBasicMaterial({ color: 0x006233, side: THREE.DoubleSide });
 
     // Stage 1 (S-IC)
     const stage1Geo = new THREE.CylinderGeometry(1.25, 1.25, 10.5, 32);
@@ -400,16 +451,27 @@ export class LanderModel {
     interRing.position.y = 11.0;
     rocket.add(interRing);
 
-    // Syrian Flag stripes
-    const redBandGeo = new THREE.CylinderGeometry(1.255, 1.255, 0.35, 32);
-    const redBand = new THREE.Mesh(redBandGeo, flagRed);
-    redBand.position.y = 15.0;
-    rocket.add(redBand);
+    // Moroccan flag decals on the cylindrical stage, visible from every side.
+    const addMoroccanFlag = (x: number, y: number, z: number, rotationY: number) => {
+      const flagGroup = new THREE.Group();
+      flagGroup.position.set(x, y, z);
+      flagGroup.rotation.y = rotationY;
 
-    const greenBandGeo = new THREE.CylinderGeometry(1.255, 1.255, 0.35, 32);
-    const greenBand = new THREE.Mesh(greenBandGeo, flagGreen);
-    greenBand.position.y = 13.5;
-    rocket.add(greenBand);
+      const flag = new THREE.Mesh(new THREE.PlaneGeometry(0.42, 0.28), moroccanFlagRed);
+      flag.position.z = 0.012;
+      flagGroup.add(flag);
+
+      const star = new THREE.Mesh(createPentagramGeometry(0.09, 0.012), moroccanFlagGreen);
+      star.position.z = 0.02;
+      flagGroup.add(star);
+      rocket.add(flagGroup);
+    };
+
+    const flagRadius = 1.255;
+    addMoroccanFlag(0, 14.0, flagRadius, 0);
+    addMoroccanFlag(0, 14.0, -flagRadius, Math.PI);
+    addMoroccanFlag(flagRadius, 14.0, 0, Math.PI / 2);
+    addMoroccanFlag(-flagRadius, 14.0, 0, -Math.PI / 2);
 
     // Stage 3 (S-IVB)
     const stage3Geo = new THREE.CylinderGeometry(0.82, 1.25, 5.5, 32);

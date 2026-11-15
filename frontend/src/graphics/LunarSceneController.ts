@@ -4,7 +4,7 @@ import { EXRLoader } from 'three/examples/jsm/loaders/EXRLoader.js';
 import { SkyboxEnvironment } from './SkyboxEnvironment';
 import { LunarLighting } from './LunarLighting';
 import { TerrainMesh } from './TerrainMesh';
-import { LanderModel } from './LanderModel';
+import { LanderModel, SATURN_V_FLIGHT_DESCRIPTION } from './LanderModel';
 import { DustAgitationEmitter } from './DustAgitationEmitter';
 import { TelemetryPacket } from '../types/telemetry';
 import { VisualizerConfig } from '../types/visualizer';
@@ -32,6 +32,11 @@ export class LunarSceneController {
   private trajectoryPositions: Float32Array;
   private trajectoryPoints: THREE.Vector3[] = [];
   private maxTrajectoryPoints = 600;
+  private trackedPosition = new THREE.Vector3();
+  private trackedOrientation = new THREE.Quaternion();
+  private cameraDestination = new THREE.Vector3();
+  private cameraLookTarget = new THREE.Vector3();
+  private cameraOffset = new THREE.Vector3();
 
   // Animation & Lifecycle
   private animFrameId: number | null = null;
@@ -302,9 +307,15 @@ export class LunarSceneController {
   }
 
   public updateTelemetry(telemetry: TelemetryPacket): void {
-    this.lastTelemetry = telemetry;
     const { position, quaternion, thrust, timestamp, stage } = telemetry;
-    const isSaturnFlight = stage?.description === 'Saturn V Powered Flight';
+    const isSaturnFlight = stage?.description === SATURN_V_FLIGHT_DESCRIPTION;
+
+    // Saturn's demo launch loop and the lunar backend both publish telemetry.
+    // Only let the active vehicle's source move the scene; otherwise the rocket
+    // snaps between the Saturn launch and the backend's lunar lander position.
+    if ((this.config.vehicleModel === 'SATURN_V') !== isSaturnFlight) return;
+
+    this.lastTelemetry = telemetry;
 
     // Update Lander 3D Transformation and Gimbal
     this.lander.updateTelemetry(
@@ -323,12 +334,12 @@ export class LunarSceneController {
     );
 
     // Keep lighting target tracking lander
-    this.lighting.updateTarget(this.lander.group.position);
+    const vehiclePosition = this.lander.getTrackedWorldPosition(this.trackedPosition);
+    this.lighting.updateTarget(vehiclePosition);
 
     // Append to 3D trajectory line safely without allocating new BufferGeometry
     if (this.config.showTrajectoryLine) {
-      const currentPos = this.lander.group.position.clone();
-      this.trajectoryPoints.push(currentPos);
+      this.trajectoryPoints.push(vehiclePosition.clone());
       if (this.trajectoryPoints.length > this.maxTrajectoryPoints) {
         this.trajectoryPoints.shift();
       }
@@ -349,28 +360,33 @@ export class LunarSceneController {
     }
   }
 
-  private updateCamera(): void {
+  private updateCamera(deltaTime: number): void {
     if (!this.lastTelemetry) return;
-    const landerPos = this.lander.group.position;
+    const landerPos = this.lander.getTrackedWorldPosition(this.trackedPosition);
+    const isSaturnV = this.config.vehicleModel === 'SATURN_V';
 
     switch (this.config.cameraMode) {
       case 'CHASE': {
         this.controls.enabled = false;
-        // Smooth chase camera trailing 6m back and 2.5m above lander
-        const offset = new THREE.Vector3(0, 3.2, 7.5);
-        offset.applyQuaternion(this.lander.group.quaternion);
-        const desiredPos = landerPos.clone().add(offset);
-        this.camera.position.lerp(desiredPos, 0.12);
-        this.camera.lookAt(landerPos.x, landerPos.y + 0.3, landerPos.z);
+        // Use a vehicle-sized chase distance. A 7.5m offset puts the camera
+        // inside the Saturn V model, while tracking the root leaves it on the pad.
+        this.lander.getTrackedWorldQuaternion(this.trackedOrientation);
+        this.cameraDestination
+          .set(0, isSaturnV ? 48 : 3.2, isSaturnV ? 130 : 7.5)
+          .applyQuaternion(this.trackedOrientation)
+          .add(landerPos);
+        const smoothing = 1 - Math.exp(-7 * Math.min(deltaTime, 0.1));
+        this.camera.position.lerp(this.cameraDestination, smoothing);
+        this.cameraLookTarget.copy(landerPos).add(this.cameraOffset.set(0, isSaturnV ? 36 : 0.3, 0));
+        this.camera.lookAt(this.cameraLookTarget);
         break;
       }
       case 'COCKPIT': {
         this.controls.enabled = false;
         // Navigation camera on forward avionics deck looking downwards towards ground
-        const cockpitPos = landerPos.clone().add(new THREE.Vector3(0, 0.45, -0.2));
-        this.camera.position.copy(cockpitPos);
-        const lookTarget = landerPos.clone().add(new THREE.Vector3(0, -10.0, -1.0));
-        this.camera.lookAt(lookTarget);
+        this.camera.position.copy(landerPos).add(this.cameraOffset.set(0, isSaturnV ? 65 : 0.45, isSaturnV ? -1 : -0.2));
+        this.cameraLookTarget.copy(landerPos).add(this.cameraOffset.set(0, isSaturnV ? 65 : -10.0, isSaturnV ? -30 : -1.0));
+        this.camera.lookAt(this.cameraLookTarget);
         break;
       }
       case 'LANDING_PAD': {
@@ -383,7 +399,7 @@ export class LunarSceneController {
       case 'ORBIT':
       default: {
         this.controls.enabled = true;
-        const targetY = this.config.vehicleModel === 'SATURN_V' ? landerPos.y + 18.0 : landerPos.y + 0.3;
+        const targetY = landerPos.y + (isSaturnV ? 36.0 : 0.3);
         this.controls.target.set(landerPos.x, targetY, landerPos.z);
         this.controls.update();
         break;
@@ -399,14 +415,14 @@ export class LunarSceneController {
     if (this.lastTelemetry && this.config.showDustParticles) {
       this.dustEmitter.update(
         dt,
-        this.lander.group.position,
+        this.lander.getTrackedWorldPosition(this.trackedPosition),
         this.lastTelemetry.position.z,
         this.lastTelemetry.thrust.cmd
       );
     }
 
     // Camera track
-    this.updateCamera();
+    this.updateCamera(dt);
 
     // Render WebGL
     try {

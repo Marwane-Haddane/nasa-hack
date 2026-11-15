@@ -136,7 +136,7 @@ npm run dev:frontend
 ```bash
 pytest backend/tests -v
 ```
-*Executes 44 tests verifying DEM GeoTIFF ingestion, 6-DOF vacuum physics, PPO neural guidance, and WebSocket streaming.*
+*Executes 45 tests verifying DEM GeoTIFF ingestion, 6-DOF vacuum physics, PPO neural guidance, and WebSocket streaming.*
 
 ### Run Frontend Tests (Vitest)
 ```bash
@@ -148,7 +148,7 @@ cd frontend && npm test
 ```bash
 npm test
 ```
-*Runs all 113 automated unit, stress, and integration tests across both frontend and backend.*
+*Runs all 114 automated unit, stress, and integration tests across both frontend and backend.*
 
 ---
 
