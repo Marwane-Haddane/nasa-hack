@@ -550,9 +550,14 @@ export const LilGuiOverlay: React.FC<LilGuiOverlayProps> = ({ config, onConfigCh
 
     startLunarLanding = () => {
       stopSaturnSimulation();
-      wsClient.reset(1450.0);
-      wsClient.sendCommand({ mode: 'AI' });
-      fallbackSimulator.start((pkt) => telemetryStore.publishTelemetry(pkt));
+      if (wsClient.isConnected()) {
+        fallbackSimulator.stop();
+        wsClient.reset(1450.0);
+        wsClient.sendCommand({ mode: 'AI' });
+      } else {
+        fallbackSimulator.reset(1450.0);
+        fallbackSimulator.start((pkt) => telemetryStore.publishTelemetry(pkt));
+      }
     };
 
     const missionSettings = {

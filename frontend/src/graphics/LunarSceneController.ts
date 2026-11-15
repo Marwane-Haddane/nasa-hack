@@ -127,7 +127,10 @@ export class LunarSceneController {
 
     // 4. Orbit Controls (for ORBIT camera mode)
     this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
+    // Camera tracking is driven by live telemetry. OrbitControls damping adds
+    // a second lag filter on top of the tracked target and makes lunar motion
+    // appear to stutter behind the lander, so keep the controls responsive.
+    this.controls.enableDamping = false;
     this.controls.dampingFactor = 0.05;
     this.controls.maxPolarAngle = Math.PI / 2 - 0.01;
     this.controls.minDistance = 1.5;
@@ -219,7 +222,19 @@ export class LunarSceneController {
     }
   }
 
+  public clearTrajectory(): void {
+    this.trajectoryPoints = [];
+    if (this.trajectoryGeo) {
+      this.trajectoryGeo.setDrawRange(0, 0);
+      const posAttr = this.trajectoryGeo.attributes.position as THREE.BufferAttribute;
+      if (posAttr) {
+        posAttr.needsUpdate = true;
+      }
+    }
+  }
+
   public setConfig(newConfig: Partial<VisualizerConfig>): void {
+    const oldVehicle = this.config.vehicleModel;
     this.config = { ...this.config, ...newConfig };
     if (this.terrain) {
       this.terrain.setSlopeHazardVisibility(this.config.showSlopeHazards);
@@ -230,6 +245,17 @@ export class LunarSceneController {
     }
     if (newConfig.vehicleModel) {
       this.lander.setVehicleModel(newConfig.vehicleModel);
+      this.clearTrajectory();
+      if (newConfig.vehicleModel === 'DROPPER_X' && oldVehicle !== 'DROPPER_X') {
+        const pos = this.lander.getTrackedWorldPosition(this.trackedPosition);
+        this.controls.target.set(pos.x, pos.y + 0.4, pos.z);
+        this.camera.position.set(pos.x + 10, pos.y + 4.5, pos.z + 16);
+        this.controls.update();
+      } else if (newConfig.vehicleModel === 'SATURN_V' && oldVehicle !== 'SATURN_V') {
+        this.controls.target.set(0, 18, 0);
+        this.camera.position.set(5.5, 3.5, 58);
+        this.controls.update();
+      }
     }
     if (newConfig.lightingMode) {
       this.setEnvironmentMode(newConfig.lightingMode);
@@ -339,7 +365,15 @@ export class LunarSceneController {
 
     // Append to 3D trajectory line safely without allocating new BufferGeometry
     if (this.config.showTrajectoryLine) {
-      this.trajectoryPoints.push(vehiclePosition.clone());
+      const currentPos = vehiclePosition.clone();
+      if (this.trajectoryPoints.length > 0) {
+        const lastPt = this.trajectoryPoints[this.trajectoryPoints.length - 1];
+        // If position jumped by more than 35m in a single frame (e.g. drop reset), clear trajectory
+        if (lastPt.distanceTo(currentPos) > 35.0) {
+          this.clearTrajectory();
+        }
+      }
+      this.trajectoryPoints.push(currentPos);
       if (this.trajectoryPoints.length > this.maxTrajectoryPoints) {
         this.trajectoryPoints.shift();
       }
@@ -368,16 +402,20 @@ export class LunarSceneController {
     switch (this.config.cameraMode) {
       case 'CHASE': {
         this.controls.enabled = false;
-        // Use a vehicle-sized chase distance. A 7.5m offset puts the camera
-        // inside the Saturn V model, while tracking the root leaves it on the pad.
-        this.lander.getTrackedWorldQuaternion(this.trackedOrientation);
-        this.cameraDestination
-          .set(0, isSaturnV ? 48 : 3.2, isSaturnV ? 130 : 7.5)
-          .applyQuaternion(this.trackedOrientation)
-          .add(landerPos);
-        const smoothing = 1 - Math.exp(-7 * Math.min(deltaTime, 0.1));
+        if (isSaturnV) {
+          this.lander.getTrackedWorldQuaternion(this.trackedOrientation);
+          this.cameraDestination
+            .set(0, 48, 130)
+            .applyQuaternion(this.trackedOrientation)
+            .add(landerPos);
+          this.cameraLookTarget.copy(landerPos).add(this.cameraOffset.set(0, 36, 0));
+        } else {
+          // Smooth stable chase position behind and slightly above Dropper X
+          this.cameraDestination.set(landerPos.x + 8.0, landerPos.y + 4.0, landerPos.z + 16.0);
+          this.cameraLookTarget.set(landerPos.x, landerPos.y + 0.3, landerPos.z);
+        }
+        const smoothing = 1 - Math.exp(-8 * Math.min(deltaTime, 0.1));
         this.camera.position.lerp(this.cameraDestination, smoothing);
-        this.cameraLookTarget.copy(landerPos).add(this.cameraOffset.set(0, isSaturnV ? 36 : 0.3, 0));
         this.camera.lookAt(this.cameraLookTarget);
         break;
       }
@@ -399,8 +437,17 @@ export class LunarSceneController {
       case 'ORBIT':
       default: {
         this.controls.enabled = true;
-        const targetY = landerPos.y + (isSaturnV ? 36.0 : 0.3);
-        this.controls.target.set(landerPos.x, targetY, landerPos.z);
+        const targetY = landerPos.y + (isSaturnV ? 36.0 : 0.4);
+        this.cameraLookTarget.set(landerPos.x, targetY, landerPos.z);
+
+        const prevTarget = this.controls.target.clone();
+        const trackingSmoothing = 1 - Math.exp(-12 * Math.min(deltaTime, 0.1));
+        this.controls.target.lerp(this.cameraLookTarget, trackingSmoothing);
+
+        // Move camera position alongside the target so view angle and distance remain stable as lander descends
+        const targetDelta = this.controls.target.clone().sub(prevTarget);
+        this.camera.position.add(targetDelta);
+
         this.controls.update();
         break;
       }

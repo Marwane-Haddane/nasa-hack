@@ -105,6 +105,10 @@ export class WebSocketClient {
     telemetryStore.resetHistory();
   }
 
+  public isConnected(): boolean {
+    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+  }
+
   public disconnect(): void {
     this.shouldConnect = false;
     if (this.reconnectTimer !== null) {
